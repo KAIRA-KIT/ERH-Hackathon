@@ -1,0 +1,90 @@
+spool_radius_mm: 6.0
+hole_angles_deg:
+- 90
+- 30
+- -30
+- -90
+- -150
+- 150
+tendon_anchor_element:
+- 10
+- 5
+- 10
+- 5
+- 10
+- 5
+segment_split_element: 5
+base:
+  r_hole: 21.0
+  hole_z_out: 3.35
+elements:
+- name: Link1
+  mesh: Link1.stl
+  r_hole: 21.0
+  hole_z_in: 3.35
+  hole_z_out: 17.44
+  pitch: 27.0
+  mesh_origin_z: -14.71
+- name: Link2
+  mesh: Link2.stl
+  r_hole: 19.5
+  hole_z_in: 3.17
+  hole_z_out: 16.9
+  pitch: 25.91
+  mesh_origin_z: -14.35
+- name: Link3
+  mesh: Link3.stl
+  r_hole: 18.0
+  hole_z_in: 2.98
+  hole_z_out: 16.35
+  pitch: 24.82
+  mesh_origin_z: -13.99
+- name: Link4
+  mesh: Link4.stl
+  r_hole: 16.5
+  hole_z_in: 2.8
+  hole_z_out: 15.81
+  pitch: 23.72
+  mesh_origin_z: -13.62
+- name: Link5
+  mesh: Link5.stl
+  r_hole: 15.0
+  hole_z_in: 2.62
+  hole_z_out: 15.26
+  pitch: 22.63
+  mesh_origin_z: -13.26
+- name: Link6
+  mesh: Link6.stl
+  r_hole: 13.5
+  hole_z_in: 2.44
+  hole_z_out: 14.71
+  pitch: 21.54
+  mesh_origin_z: -12.89
+- name: Link7
+  mesh: Link7.stl
+  r_hole: 12.0
+  hole_z_in: 2.26
+  hole_z_out: 14.17
+  pitch: 20.45
+  mesh_origin_z: -12.53
+- name: Link8
+  mesh: Link8.stl
+  r_hole: 10.5
+  hole_z_in: 2.85
+  hole_z_out: 14.4
+  pitch: 19.36
+  mesh_origin_z: -12.95
+- name: Link9
+  mesh: Link9.stl
+  r_hole: 9.0
+  hole_z_in: 2.64
+  hole_z_out: 13.83
+  pitch: 18.26
+  mesh_origin_z: -12.55
+- name: EEF
+  mesh: EEF.stl
+  r_hole: 7.5
+  hole_z_in: 2.64
+  hole_z_out: 13.46
+  pitch: 0.0
+  mesh_origin_z: -12.37

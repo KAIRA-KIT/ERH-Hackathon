@@ -1,0 +1,10 @@
+gripper_control:
+  ros__parameters:
+    driver_ns: /trunk_control
+    dry_run: false            # true: nothing is sent to the servos (use with view.launch.py)
+    rate_hz: 10.0
+    max_bend_rate: 30.0       # deg/s per segment
+    max_joint_bend: 25.0      # deg per ball joint -> 125 deg per 5-joint segment; check on hardware
+    contact_load_pct: 15.0    # load rise on the inside lines that counts as contact
+    squeeze_deg: 30.0         # extra pull on the inside lines when holding
+    servo_signs: [1.0, 1.0, 1.0, 1.0, 1.0, 1.0]   # -1 if a spool winds the other way
