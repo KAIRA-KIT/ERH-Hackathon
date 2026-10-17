@@ -1,0 +1,9 @@
+trunk_control:
+  ros__parameters:
+    port: /dev/ttyACM0
+    baudrate: 1000000
+    servo_ids: [1, 2, 3, 4, 5, 6]
+    rate_hz: 50.0
+    goal_speed: 2000        # steps/s (4096 steps = 360 deg)
+    goal_acc: 50
+    configure_step_mode: true
