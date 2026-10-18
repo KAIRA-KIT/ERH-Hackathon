@@ -1,0 +1,610 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>RIGID Controller</title>
+<style>
+:root{--bg:#eef0f2;--panel:#fff;--line:#d3d8de;--fg:#16191d;--muted:#5d6670;--accent:#e2621b;--good:#2c8a57;--bad:#c43a2f;
+  --f-ui:"Barlow Semi Condensed","Arial Narrow",system-ui,sans-serif;--f-mono:ui-monospace,"SFMono-Regular",Menlo,Consolas,monospace}
+@media (prefers-color-scheme: dark){:root{--bg:#101215;--panel:#171a1e;--line:#2b3138;--fg:#e7eaee;--muted:#8d96a1;--accent:#ff7b2f;--good:#45b27a;--bad:#ec5a4c;color-scheme:dark}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.45 system-ui,-apple-system,"Segoe UI",sans-serif;padding:16px}
+h1{font:700 24px var(--f-ui);margin:0}
+h1 span{color:var(--accent)}
+header{display:flex;flex-wrap:wrap;align-items:center;gap:12px;margin-bottom:14px}
+#state{font:12px var(--f-mono);padding:4px 10px;border-radius:999px;border:1px solid var(--line)}
+#state.on{color:var(--good);border-color:var(--good)} #state.off{color:var(--muted)}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:12px;align-items:start}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:12px 14px}
+.card h2{font:600 13px var(--f-ui);letter-spacing:.09em;text-transform:uppercase;color:var(--muted);margin:0 0 8px}
+.row{display:grid;grid-template-columns:120px 1fr 70px;gap:8px;align-items:center;margin-top:8px}
+.row label{color:var(--muted)} .row output{font:12px var(--f-mono);text-align:right}
+input[type=range]{width:100%;accent-color:var(--accent)}
+.btns{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}
+button{font:500 14px system-ui,sans-serif;padding:8px 13px;border-radius:7px;border:1px solid var(--line);background:var(--panel);color:var(--fg);cursor:pointer}
+button.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+button.stop{background:var(--bad);border-color:var(--bad);color:#fff}
+button:disabled{opacity:.45;cursor:not-allowed}
+button:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.note{color:var(--muted);font-size:12.5px;margin:8px 0 0}
+#log{font:12px/1.5 var(--f-mono);height:260px;overflow:auto;white-space:pre-wrap;background:var(--bg);border:1px solid var(--line);border-radius:6px;padding:8px}
+.cmd{display:flex;gap:8px;margin-top:8px} .cmd input{flex:1;font:13px var(--f-mono);padding:8px;border-radius:7px;border:1px solid var(--line);background:var(--bg);color:var(--fg)}
+label.chk{display:flex;gap:8px;align-items:center;margin-top:10px}
+kbd{font:11px var(--f-mono);border:1px solid var(--line);border-bottom-width:2px;border-radius:4px;padding:0 4px}
+.pad{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;max-width:300px}
+.pad button{padding:14px 6px;font-size:15px;touch-action:none;user-select:none}
+.pad button.held{background:var(--accent);border-color:var(--accent);color:#fff}
+.steps{margin:0;padding-left:20px;color:var(--muted);font-size:13px}
+.jogrow{display:grid;grid-template-columns:96px repeat(4,1fr);gap:6px;align-items:center;margin-top:6px}
+.jogrow span{font:12px var(--f-mono);color:var(--muted)}
+.jogrow button{padding:5px 0;font:12px var(--f-mono)}
+.cfg{display:grid;grid-template-columns:150px 1fr auto;gap:8px;align-items:center;margin-top:8px}
+.cfg label{color:var(--muted);font-size:13px}
+.cfg input,.cfg select{font:13px var(--f-mono);padding:6px;border-radius:6px;border:1px solid var(--line);background:var(--bg);color:var(--fg);min-width:0}
+.view3d{grid-column:span 2} @media (max-width:760px){.view3d{grid-column:auto}}
+.vwrap{position:relative;height:420px;border-radius:8px;overflow:hidden;background:var(--bg);border:1px solid var(--line)}
+#view{width:100%;height:100%;display:block;touch-action:none}
+.vlegend{position:absolute;left:8px;bottom:8px;display:flex;gap:12px;font-size:12px;color:var(--muted)}
+.sw{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:4px;vertical-align:-1px}
+.sw.ghost{background:#3fa7d6}.sw.meas{background:#888;border:1px solid var(--fg)}.sw.tend{background:var(--accent)}
+table.tel{width:100%;border-collapse:collapse;font:12px var(--f-mono);margin-top:10px}
+table.tel th{font:600 11px var(--f-ui);letter-spacing:.06em;text-transform:uppercase;color:var(--muted);text-align:right;padding:3px 6px;border-bottom:1px solid var(--line)}
+table.tel td{text-align:right;padding:3px 6px;border-bottom:1px solid var(--line)}
+table.tel th:first-child,table.tel td:first-child{text-align:left}
+details.more{margin-top:10px} details.more summary{cursor:pointer;color:var(--fg)}
+</style>
+</head>
+<body>
+<header>
+  <h1>RIGID <span>Controller</span></h1>
+  <button class="primary" id="connect">Connect to RIGID</button>
+  <span id="state" class="off">Not connected</span>
+  <button class="stop" id="estop" title="Torque off on all servos (Space)">STOP (torque off)</button>
+</header>
+
+<div class="grid">
+  <div class="card view3d">
+    <h2>Arm view</h2>
+    <div class="vwrap"><canvas id="view"></canvas>
+      <div class="vlegend"><span><i class="sw ghost"></i>Commanded</span><span><i class="sw meas"></i>Measured from servos</span><span><i class="sw tend"></i>Tendons</span></div>
+    </div>
+    <label class="chk"><input type="checkbox" id="live" checked> Read servo positions twice a second</label>
+    <table class="tel"><thead><tr><th>Servo</th><th>Commanded</th><th>Actual</th><th>Load</th></tr></thead><tbody id="telRows"></tbody></table>
+  </div>
+  <div class="card">
+    <h2>Reach a point (IK)</h2>
+    <div class="row"><label for="tx">Target X</label><input id="tx" type="range" min="-200" max="200" value="0"><output id="otx"></output></div>
+    <div class="row"><label for="ty">Target Y</label><input id="ty" type="range" min="-200" max="200" value="0"><output id="oty"></output></div>
+    <div class="row"><label for="tz">Distance from base</label><input id="tz" type="range" min="80" max="278" value="270"><output id="otz"></output></div>
+    <label class="chk"><input type="checkbox" id="liveIK" checked> Send while dragging</label>
+    <p class="note" id="ikInfo">—</p>
+    <div class="btns"><button id="sendIK">Send target</button><button id="circle">Circle demo</button></div>
+  </div>
+
+  <div class="card">
+    <h2>Shape directly</h2>
+    <div class="row"><label for="b1">Section 1 bend</label><input id="b1" type="range" min="0" max="140" value="0"><output id="ob1"></output></div>
+    <div class="row"><label for="p1">Section 1 direction</label><input id="p1" type="range" min="0" max="359" value="0"><output id="op1"></output></div>
+    <div class="row"><label for="b2">Section 2 bend</label><input id="b2" type="range" min="0" max="160" value="0"><output id="ob2"></output></div>
+    <div class="row"><label for="p2">Section 2 direction</label><input id="p2" type="range" min="0" max="359" value="0"><output id="op2"></output></div>
+    <label class="chk"><input type="checkbox" id="liveShape"> Send while dragging</label>
+    <div class="btns"><button id="sendShape">Send shape</button><button id="straight">Straight</button></div>
+  </div>
+
+  <div class="card">
+    <h2>Arm</h2>
+    <div class="btns" style="margin-top:0">
+      <button data-cmd="L" class="primary" title="Lock (L)">Lock (L)</button>
+      <button data-cmd="R" title="Release (R)">Release (R)</button>
+      <button data-cmd="P" title="Print status">Status (P)</button>
+      <button data-cmd="E" title="Arm torque back on after STOP">Torque on (E)</button>
+    </div>
+    <p class="note">Keys: <kbd>L</kbd> lock · <kbd>R</kbd> release · <kbd>P</kbd> status · <kbd>Space</kbd> STOP everything. Arrow keys nudge the IK target 5 mm.</p>
+    <div class="cmd"><input id="raw" placeholder="Any command, e.g.  A 30 0 0 0 0 0" aria-label="Raw command"><button id="sendRaw">Send</button></div>
+  </div>
+
+  <div class="card">
+    <h2>Mobile base</h2>
+    <div class="pad">
+      <button data-drive="rotL" title="Rotate left (Q)">⟲ Q</button>
+      <button data-drive="fwd" title="Forward (W)">▲ W</button>
+      <button data-drive="rotR" title="Rotate right (E)">⟳ E</button>
+      <button data-drive="left" title="Strafe left (A)">◀ A</button>
+      <button data-drive="back" title="Back (S)">▼ S</button>
+      <button data-drive="right" title="Strafe right (D)">▶ D</button>
+    </div>
+    <div class="row"><label for="spd">Speed</label><input id="spd" type="range" min="10" max="100" value="60"><output id="ospd"></output></div>
+    <p class="note">Hold a button or <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> to drive, <kbd>Q</kbd>/<kbd>E</kbd> to turn. Combine keys to drive diagonally. The robot stops by itself 0.4 s after you let go or the link drops.</p>
+    <p class="note">Wheel spins the wrong way? Tick it and save:
+      <label><input type="checkbox" id="rv0"> FL</label> <label><input type="checkbox" id="rv1"> FR</label>
+      <label><input type="checkbox" id="rv2"> RL</label> <label><input type="checkbox" id="rv3"> RR</label>
+      <button id="saveSigns" style="padding:3px 8px;font-size:12px">Save</button></p>
+  </div>
+
+  <div class="card">
+    <h2>Calibrate (saved on the robot)</h2>
+    <ol class="steps">
+      <li>Only once, before tying lines: <b>Centre</b>, then tie each line on, snug by hand.</li>
+      <li>Press <b>Soft-tension</b>. All six pull in together with the same small force, so the arm straightens itself. Tap or shake it gently so the joints settle.</li>
+      <li>When the view shows it straight, press <b>Save zero</b>. Loads on every boot.</li>
+    </ol>
+    <div class="row" style="grid-template-columns:120px 1fr 70px"><label for="soft">Soft force</label><input id="soft" type="range" min="40" max="200" value="80"><output id="osoft">80</output></div>
+    <div class="btns" style="margin-top:6px">
+      <button data-cmd="C">Centre (C)</button>
+      <button id="softBtn">Soft-tension (Q)</button>
+      <button data-cmd="Z" class="primary">Save zero (Z)</button>
+      <button data-cmd="H" title="Winds each line until the load rises, then saves zero">Auto-home (H)</button>
+      <button data-cmd="K">Show settings (K)</button>
+    </div>
+    <div id="jog"></div>
+    <details class="more"><summary>Servo IDs, direction, gains</summary>
+      <div class="cfg"><label for="ids">IDs for tendon 0–5</label><input id="ids" value="1 2 3 4 5 6"><button data-cfg="M" data-src="ids">Save</button></div>
+      <div class="cfg"><label for="wind">Wind direction</label><select id="wind"><option value="1">+1</option><option value="-1">−1</option></select><button data-cfg="W" data-src="wind">Save</button></div>
+      <div class="cfg"><label for="gains">Gains G1 G2</label><input id="gains" value="202 115"><button data-cfg="G" data-src="gains">Save</button></div>
+      <div class="cfg"><label for="tq">Torque limit (0–1000)</label><input id="tq" value="300"><button data-cfg="T" data-src="tq">Save</button></div>
+      <div class="cfg"><label for="idchg">Change ID: old new</label><input id="idchg" placeholder="1 4"><button data-cfg="I" data-src="idchg">Set</button></div>
+      <p class="note">Change IDs with only that one servo plugged into the bus. If a +jog unwinds the line, set wind direction to −1 and save zero again.</p>
+    </details>
+  </div>
+
+  <div class="card" style="grid-column:1/-1">
+    <h2>Log</h2>
+    <div id="log" aria-live="polite"></div>
+  </div>
+</div>
+<script>
+// ===== RIGID kinematics + statics model (units: mm, N, N·mm, rad) =====
+const DEG = Math.PI / 180;
+const LINKS = [{"n":"Link-1","d":29.26,"r":24.0,"zp":11.38,"zd":24.89,"m":0.02448,"cz":17.96,"rb":5.4,"mt":25.0},{"n":"Link0","d":28.168,"r":22.5,"zp":10.83,"zd":23.98,"m":0.02088,"cz":17.2,"rb":5.4,"mt":26.5},{"n":"Link1","d":27.077,"r":21.0,"zp":10.29,"zd":23.07,"m":0.01763,"cz":16.43,"rb":5.4,"mt":27.5},{"n":"Link2","d":25.985,"r":19.5,"zp":9.74,"zd":22.16,"m":0.01471,"cz":15.66,"rb":5.4,"mt":28.0},{"n":"Link3","d":24.893,"r":18.0,"zp":9.2,"zd":21.25,"m":0.01211,"cz":14.87,"rb":5.4,"mt":28.5},{"n":"Link4","d":23.801,"r":16.5,"zp":8.65,"zd":20.34,"m":0.00982,"cz":14.07,"rb":5.4,"mt":29.5},{"n":"Link5","d":22.709,"r":15.0,"zp":8.1,"zd":19.43,"m":0.0078,"cz":13.25,"rb":5.4,"mt":30.5},{"n":"Link6","d":21.617,"r":13.5,"zp":7.56,"zd":18.52,"m":0.00606,"cz":12.4,"rb":5.4,"mt":31.5},{"n":"Link7","d":21.493,"r":12.0,"zp":7.01,"zd":17.61,"m":0.00465,"cz":11.61,"rb":5.4,"mt":33.0},{"n":"Link8","d":19.389,"r":10.5,"zp":5.66,"zd":15.89,"m":0.00323,"cz":10.43,"rb":3.9,"mt":35.5},{"n":"Link9","d":18.038,"r":9.0,"zp":5.14,"zd":15.02,"m":0.0022,"cz":9.58,"rb":3.9,"mt":36.5},{"n":"EEF","d":15.458,"r":7.5,"zp":4.38,"zd":13.78,"m":0.00143,"cz":8.54,"rb":3.96,"mt":36.0}];
+const NJ = LINKS.length;                       // 12 bodies -> 12 ball joints (joint 0 = lid socket)
+const ALPHA = [0,1,2,3,4,5].map(k => (43.609 + 60 * k) * DEG);  // tendon hole angles in base frame
+const LID = { r: 25.5, z: -8.0 };             // lid tendon-hole exit, relative to socket-cup centre
+const Z_DRUM = -22.41;                         // drum tangent height (shaft) relative to cup centre
+const DRUM_R = 6.0;                            // spool drum radius, mm
+const KT = 0.814;                              // N·m per A  (8.3 kg·cm/A)
+const I_IDLE = 0.10, I_STALL = 2.4, TAU_STALL = 1.96, SUPPLY_A = 4.0, CAR_A = 1.5;
+const OMEGA0 = 106 * 6;                        // deg/s no-load (106 rpm)
+
+const M = {
+  layout: 'two',   // 'two' = 3 tendons to mid + 3 to tip, 'one' = all 6 to tip
+  split: 5,        // last joint/link index of section 1 in 'two' layout
+  mount: 'hang',
+};
+function nSec() { return M.layout === 'two' ? 2 : 1; }
+function secOf(j) { return M.layout === 'two' ? (j <= M.split ? 0 : 1) : 0; }
+function secJoints(s) { const a = []; for (let j = 0; j < NJ; j++) if (secOf(j) === s) a.push(j); return a; }
+function term(k) { return M.layout === 'two' ? (k % 2 === 0 ? M.split : NJ - 1) : NJ - 1; }
+function bMax(s) { const js = secJoints(s); return js.length * Math.min(...js.map(j => LINKS[j].mt)) * DEG * 0.95; }
+
+// --- small linear algebra
+const I3 = [[1,0,0],[0,1,0],[0,0,1]];
+function mul3(A, B) { const C = [[0,0,0],[0,0,0],[0,0,0]]; for (let i=0;i<3;i++) for (let j=0;j<3;j++) C[i][j]=A[i][0]*B[0][j]+A[i][1]*B[1][j]+A[i][2]*B[2][j]; return C; }
+function mv(A, v) { return [A[0][0]*v[0]+A[0][1]*v[1]+A[0][2]*v[2], A[1][0]*v[0]+A[1][1]*v[1]+A[1][2]*v[2], A[2][0]*v[0]+A[2][1]*v[1]+A[2][2]*v[2]]; }
+const add = (a,b) => [a[0]+b[0],a[1]+b[1],a[2]+b[2]];
+const sub = (a,b) => [a[0]-b[0],a[1]-b[1],a[2]-b[2]];
+const scl = (a,s) => [a[0]*s,a[1]*s,a[2]*s];
+const dot = (a,b) => a[0]*b[0]+a[1]*b[1]+a[2]*b[2];
+const crs = (a,b) => [a[1]*b[2]-a[2]*b[1], a[2]*b[0]-a[0]*b[2], a[0]*b[1]-a[1]*b[0]];
+const nrm = a => Math.hypot(a[0],a[1],a[2]);
+function rotvec(wx, wy, wz) {
+  const th = Math.hypot(wx, wy, wz); if (th < 1e-12) return I3;
+  const x=wx/th, y=wy/th, z=wz/th, c=Math.cos(th), s=Math.sin(th), v=1-c;
+  return [[c+x*x*v, x*y*v-z*s, x*z*v+y*s],[y*x*v+z*s, c+y*y*v, y*z*v-x*s],[z*x*v-y*s, z*y*v+x*s, c+z*z*v]];
+}
+function solveLin(A, b) {                      // Gaussian elimination, small dense
+  const n = b.length, M2 = A.map((r,i) => [...r, b[i]]);
+  for (let c = 0; c < n; c++) {
+    let p = c; for (let r = c+1; r < n; r++) if (Math.abs(M2[r][c]) > Math.abs(M2[p][c])) p = r;
+    [M2[c], M2[p]] = [M2[p], M2[c]]; const d = M2[c][c] || 1e-12;
+    for (let r = 0; r < n; r++) if (r !== c) { const f = M2[r][c] / d; for (let k = c; k <= n; k++) M2[r][k] -= f * M2[c][k]; }
+  }
+  return M2.map((r,i) => r[n] / (r[i] || 1e-12));
+}
+
+// --- forward kinematics: q = [bx0, by0, bx1, by1] total bend vector per section (rad)
+function fk(q) {
+  const F = new Array(NJ); let R = I3, p = [0,0,0];
+  const n = [secJoints(0).length, secJoints(1).length];
+  for (let j = 0; j < NJ; j++) {
+    const s = secOf(j), bx = q[2*s] / n[s], by = q[2*s+1] / n[s];
+    R = mul3(R, rotvec(-by, bx, 0));
+    F[j] = { R, p };
+    p = add(p, mv(R, [0, 0, LINKS[j].d]));
+  }
+  return { F, tip: p };
+}
+const W = (Fj, v) => add(Fj.p, mv(Fj.R, v));
+const hole = (j, k, z) => [LINKS[j].r * Math.cos(ALPHA[k]), LINKS[j].r * Math.sin(ALPHA[k]), z];
+const lidHole = k => [LID.r * Math.cos(ALPHA[k]), LID.r * Math.sin(ALPHA[k]), LID.z];
+function tendonLengths(F) {
+  const L = [];
+  for (let k = 0; k < 6; k++) {
+    let prev = lidHole(k), s = 0;
+    for (let j = 0; j <= term(k); j++) { const a = W(F[j], hole(j, k, LINKS[j].zp)); s += nrm(sub(a, prev)); prev = W(F[j], hole(j, k, LINKS[j].zd)); }
+    L.push(s);
+  }
+  return L;
+}
+function tendonPolyline(F, k) {
+  const lh = lidHole(k), pts = [[lh[0], lh[1], Z_DRUM], lh];
+  for (let j = 0; j <= term(k); j++) { pts.push(W(F[j], hole(j, k, LINKS[j].zp))); pts.push(W(F[j], hole(j, k, LINKS[j].zd))); }
+  return pts;
+}
+let L0 = null;
+function resetZero() { L0 = tendonLengths(fk([0,0,0,0]).F); }
+// servo angle (deg) needed for shape q; positive = winding in
+function servoAnglesFor(q) { const L = tendonLengths(fk(q).F); return L.map((l,k) => (L0[k] - l) / DRUM_R / DEG); }
+
+// limit a shape so no servo exceeds its travel; returns scale used
+function fitTravel(q, limDeg) {
+  const ok = s => Math.max(...servoAnglesFor(q.map(v => v*s)).map(Math.abs)) <= limDeg;
+  if (ok(1)) return { q, s: 1 };
+  let lo = 0, hi = 1; for (let i = 0; i < 14; i++) { const m = (lo+hi)/2; if (ok(m)) lo = m; else hi = m; }
+  return { q: q.map(v => v*lo), s: lo };
+}
+function clampBend(q) {
+  const out = q.slice();
+  for (let s = 0; s < nSec(); s++) { const b = Math.hypot(out[2*s], out[2*s+1]), m = bMax(s); if (b > m) { out[2*s] *= m/b; out[2*s+1] *= m/b; } }
+  for (let s = nSec(); s < 2; s++) { out[2*s] = 0; out[2*s+1] = 0; }
+  return out;
+}
+
+// --- inverse kinematics: tip -> shape (damped least squares)
+function ik(target, q0) {
+  let q = clampBend(q0.slice()); const nq = 2 * nSec(), h = 1e-4, lam2 = 30;
+  for (let it = 0; it < 30; it++) {
+    const tip = fk(q).tip, e = sub(target, tip);
+    if (nrm(e) < 0.05) break;
+    const J = [[],[],[]];
+    for (let i = 0; i < nq; i++) { const qq = q.slice(); qq[i] += h; const t2 = fk(qq).tip; for (let r = 0; r < 3; r++) J[r][i] = (t2[r] - tip[r]) / h; }
+    const JJt = [0,1,2].map(r => [0,1,2].map(c => { let s = 0; for (let i = 0; i < nq; i++) s += J[r][i]*J[c][i]; return s + (r===c?lam2:0); }));
+    const y = solveLin(JJt, e);
+    for (let i = 0; i < nq; i++) q[i] += J[0][i]*y[0] + J[1][i]*y[1] + J[2][i]*y[2];
+    q = clampBend(q);
+  }
+  return q;
+}
+
+// --- shape from servo angles (Gauss-Newton on tendon length changes)
+function shapeFromServos(thDeg, q0, iters = 4) {
+  let q = q0.slice(); const nq = 2 * nSec(), h = 1e-5;
+  const target = thDeg.map(t => t * DEG * DRUM_R);       // commanded pull-in per tendon, mm
+  for (let it = 0; it < iters; it++) {
+    const L = tendonLengths(fk(q).F), r = L.map((l,k) => (L0[k] - l) - target[k]);
+    const J = r.map(() => []);
+    for (let i = 0; i < nq; i++) { const qq = q.slice(); qq[i] += h; const L2 = tendonLengths(fk(qq).F); for (let k = 0; k < 6; k++) J[k][i] = ((L0[k]-L2[k]) - (L0[k]-L[k])) / h; }
+    const A = [], b = [];
+    for (let i = 0; i < nq; i++) { A.push([]); let s = 0; for (let k = 0; k < 6; k++) s -= J[k][i]*r[k]; b.push(s); for (let c = 0; c < nq; c++) { let t = 0; for (let k = 0; k < 6; k++) t += J[k][i]*J[k][c]; A[i].push(t + (i===c?1e-2:0)); } }
+    const dq = solveLin(A, b); for (let i = 0; i < nq; i++) q[i] += dq[i];
+    q = clampBend(q);
+  }
+  const L = tendonLengths(fk(q).F);
+  const resid = L.map((l,k) => (L0[k] - l) - target[k]);   // >0: tendon needs more pull than commanded (slack); <0: fighting
+  return { q, resid };
+}
+
+// --- quasi-static tension sharing + friction lock check
+function statics(F, tip, opt) {
+  const g = M.mount === 'hang' ? [0,0,9.81] : [0,0,-9.81];
+  const Ftip = add(scl(g, opt.payload_g / 1000), [opt.push_N, 0, 0]);
+  const coms = LINKS.map((L,i) => W(F[i], [0,0,L.cz]));
+  const rows = [], bvec = [], perJoint = [];
+  for (let j = 0; j < NJ; j++) {
+    const c = F[j].p, e = j === 0 ? [0,0,1] : [F[j-1].R[0][2], F[j-1].R[1][2], F[j-1].R[2][2]];
+    let b = crs(sub(tip, c), Ftip), gs = Ftip.slice();
+    for (let i = j; i < NJ; i++) { const mg = scl(g, LINKS[i].m); b = add(b, crs(sub(coms[i], c), mg)); gs = add(gs, mg); }
+    const cols = [], us = [];
+    for (let k = 0; k < 6; k++) {
+      if (term(k) < j) { cols.push([0,0,0]); us.push([0,0,0]); continue; }
+      const A = W(F[j], hole(j, k, LINKS[j].zp));
+      const B = j === 0 ? lidHole(k) : W(F[j-1], hole(j-1, k, LINKS[j-1].zd));
+      const u = scl(sub(B, A), 1 / nrm(sub(B, A)));
+      cols.push(crs(sub(A, c), u)); us.push(u);
+    }
+    perJoint.push({ c, e, b, gs, cols, us });
+    for (let r = 0; r < 3; r++) { rows.push(cols.map(cv => cv[r])); bvec.push(b[r]); }
+  }
+  // box QP: min |A T + b|^2 + eps |T - Tpre|^2, Tmin <= T <= Tcap  (coordinate descent)
+  const H = [0,1,2,3,4,5].map(i => [0,1,2,3,4,5].map(k => rows.reduce((s,r) => s + r[i]*r[k], 0)));
+  const eps = 0.02 * (H.reduce((s,r,i) => s + r[i], 0) / 6);
+  const f = [0,1,2,3,4,5].map(i => rows.reduce((s,r,n) => s + r[i]*bvec[n], 0) - eps * opt.Tpre);
+  for (let i = 0; i < 6; i++) H[i][i] += eps;
+  const T = new Array(6).fill(Math.min(Math.max(opt.Tpre, opt.Tmin), opt.Tcap));
+  for (let sw = 0; sw < 80; sw++) for (let i = 0; i < 6; i++) {
+    let s = f[i]; for (let k = 0; k < 6; k++) if (k !== i) s += H[i][k] * T[k];
+    T[i] = Math.min(opt.Tcap, Math.max(opt.Tmin, -s / H[i][i]));
+  }
+  // joint results
+  const out = perJoint.map((P, j) => {
+    let Mj = P.b.slice(), Fsum = P.gs.slice();
+    for (let k = 0; k < 6; k++) { Mj = add(Mj, scl(P.cols[k], T[k])); Fsum = add(Fsum, scl(P.us[k], T[k])); }
+    const N = -dot(Fsum, P.e);                      // compression pushing ball into the socket
+    const cap = opt.mu * Math.max(N, 0) * LINKS[j].rb;
+    const Mn = nrm(Mj);
+    return { M: Mn, N, cap, util: N <= 0 ? Infinity : Mn / Math.max(cap, 1e-9), sep: N <= 0 };
+  });
+  return { T, joints: out };
+}
+function holds(st) { return st.joints.every(j => j.util <= 1 && !j.sep); }
+function holdCapacity(F, tip, opt) {             // max side push at tip (N) before any joint slips
+  const ok = f => holds(statics(F, tip, { ...opt, push_N: f }));
+  if (!ok(0)) return 0;
+  let lo = 0, hi = 40; if (ok(hi)) return hi;
+  for (let i = 0; i < 16; i++) { const m = (lo+hi)/2; if (ok(m)) lo = m; else hi = m; }
+  return lo;
+}
+function servoElectrical(T, Ilim) {
+  return T.map(t => { const tau = t * DRUM_R / 1000; return { tau, I: Math.min(I_STALL, I_IDLE + tau / KT), over: I_IDLE + tau / KT > Ilim + 1e-6 }; });
+}
+function tensionCap(Ilim) { return Math.max(0.5, (Ilim - I_IDLE) * KT / (DRUM_R / 1000)); }
+if (typeof module !== 'undefined') module.exports = { M, LINKS, fk, ik, shapeFromServos, servoAnglesFor, fitTravel, statics, holdCapacity, tensionCap, servoElectrical, resetZero, tendonLengths, bMax, nrm, DEG };
+
+// ===== RIGID Controller: Web Bluetooth (Nordic UART) + the simulator's IK =====
+const NUS = '6e400001-b5a3-f393-e0a9-e50e24dcca9e';
+const NUS_RX = '6e400002-b5a3-f393-e0a9-e50e24dcca9e';   // we write commands here
+const NUS_TX = '6e400003-b5a3-f393-e0a9-e50e24dcca9e';   // the XIAO notifies replies here
+const $ = id => document.getElementById(id);
+const logEl = $('log');
+function log(msg) {
+  const t = new Date().toLocaleTimeString();
+  logEl.textContent += `${t}  ${msg}\n`;
+  if (logEl.textContent.length > 20000) logEl.textContent = logEl.textContent.slice(-15000);
+  logEl.scrollTop = logEl.scrollHeight;
+}
+
+// shared with the 3D view
+window.RIGID = { cmdShape: [0, 0, 0, 0], meas: null, loads: null };
+const QUIET = c => c === 'Y' || c.startsWith('D ');
+function noteCommand(cmd) {
+  const p = cmd.trim().split(/\s+/), c = p[0].toUpperCase();
+  if (c === 'S') { const v = p.slice(1).map(Number); window.RIGID.cmdShape = [v[0] || 0, v[1] || 0, v.length >= 4 ? v[2] : 0, v.length >= 4 ? v[3] : 0]; }
+  if (c === 'Z' || c === 'Q' || c === 'H') window.RIGID.cmdShape = [0, 0, 0, 0];
+}
+
+// ---------------- Bluetooth
+let device = null, rxChar = null, rbuf = '', busy = false, pending = null;
+const queue = [];
+async function pump() {
+  if (busy || !rxChar) return;
+  const cmd = queue.shift() ?? pending; if (!cmd) return;
+  if (cmd === pending) pending = null;
+  busy = true;
+  try {
+    const bytes = new TextEncoder().encode(cmd + '\n');
+    for (let i = 0; i < bytes.length; i += 20) await rxChar.writeValue(bytes.slice(i, i + 20));
+    if (!QUIET(cmd)) log('→ ' + cmd);
+    noteCommand(cmd);
+  } catch (e) { log('ERR send failed: ' + e.message); }
+  busy = false; pump();
+}
+function send(cmd) { if (!rxChar) { log('Not connected — press Connect first'); return; } queue.push(cmd); pump(); }
+function sendLatest(cmd) { if (!rxChar) return; pending = cmd; pump(); }   // live sliders: only the newest matters
+
+async function connect() {
+  if (!navigator.bluetooth) { log('This browser has no Web Bluetooth. Open this file in Chrome or Edge on the laptop.'); return; }
+  try {
+    device = await navigator.bluetooth.requestDevice({ filters: [{ name: 'RIGID' }], optionalServices: [NUS] });
+    device.addEventListener('gattserverdisconnected', () => { rxChar = null; setState(false); log('Disconnected'); });
+    log('Connecting to ' + device.name + '…');
+    const server = await device.gatt.connect();
+    const svc = await server.getPrimaryService(NUS);
+    rxChar = await svc.getCharacteristic(NUS_RX);
+    const tx = await svc.getCharacteristic(NUS_TX);
+    await tx.startNotifications();
+    tx.addEventListener('characteristicvaluechanged', e => {
+      rbuf += new TextDecoder().decode(e.target.value);
+      let i; while ((i = rbuf.indexOf('\n')) >= 0) { const line = rbuf.slice(0, i).trim(); rbuf = rbuf.slice(i + 1); if (line.startsWith('Y ')) onTelemetry(line); else if (line.includes("unknown command 'Y'")) { if ($('live').checked) { $('live').checked = false; log('The robot runs old firmware without live readback. Upload the new RIGID_v2.ino, then tick the readback box again.'); } } else if (line) log('← ' + line); }
+    });
+    setState(true); log('Connected. Send H to home before the first move.');
+  } catch (e) { log('ERR ' + e.message); }
+}
+function setState(on) {
+  const s = $('state'); s.textContent = on ? 'Connected to RIGID' : 'Not connected'; s.className = on ? 'on' : 'off';
+  $('connect').textContent = on ? 'Disconnect' : 'Connect to RIGID';
+}
+$('connect').addEventListener('click', () => { if (device?.gatt?.connected) device.gatt.disconnect(); else connect(); });
+$('estop').addEventListener('click', () => { queue.length = 0; pending = null; send('X'); });
+
+// ---------------- live readback
+function onTelemetry(line) {
+  const v = line.slice(2).trim().split(/\s+/).map(Number);
+  if (v.length < 12) return;
+  window.RIGID.meas = v.slice(0, 6); window.RIGID.loads = v.slice(6, 12);
+}
+setInterval(() => { if (rxChar && $('live').checked && !busy && !queue.length && !pending) send('Y'); }, 500);
+$('telRows').innerHTML = [0,1,2,3,4,5].map(k => `<tr><td>k${k}</td><td id="tc${k}">—</td><td id="ta${k}">—</td><td id="tl${k}">—</td></tr>`).join('');
+setInterval(() => {
+  const s = window.RIGID.cmdShape, c = linServo(s[0], s[1], s[2], s[3]), m = window.RIGID.meas, l = window.RIGID.loads;
+  for (let k = 0; k < 6; k++) {
+    $('tc' + k).textContent = c[k].toFixed(0) + '°';
+    $('ta' + k).textContent = m ? m[k].toFixed(0) + '°' : '—';
+    $('tl' + k).textContent = l ? l[k] : '—';
+  }
+}, 250);
+$('soft').addEventListener('input', () => $('osoft').textContent = $('soft').value);
+$('softBtn').addEventListener('click', () => send('Q ' + $('soft').value));
+
+// ---------------- IK (same model as the simulator)
+M.layout = 'two'; resetZero();
+const linServo = (b1, p1, b2, p2) => [0,1,2,3,4,5].map(k => {          // same formula as the ESP32
+  const a = (43.6 + 60 * k) * DEG; let th = 202 * b1 * DEG * Math.cos(p1 * DEG - a);
+  if (k % 2 === 1) th += 115 * b2 * DEG * Math.cos(p2 * DEG - a); return th; });
+let qPrev = [0.01, 0.01, 0, 0];
+function ikCommand() {
+  const t = [+$('tx').value, +$('ty').value, +$('tz').value];
+  const q = ik(t, qPrev); qPrev = q;
+  const tip = fk(q).tip, err = Math.hypot(tip[0] - t[0], tip[1] - t[1], tip[2] - t[2]);
+  const b1 = Math.hypot(q[0], q[1]) / DEG, p1 = ((Math.atan2(q[1], q[0]) / DEG) + 360) % 360;
+  const b2 = Math.hypot(q[2], q[3]) / DEG, p2 = ((Math.atan2(q[3], q[2]) / DEG) + 360) % 360;
+  const maxServo = Math.max(...linServo(b1, p1, b2, p2).map(Math.abs));
+  $('ikInfo').textContent = `Shape: section 1 ${b1.toFixed(0)}° @ ${p1.toFixed(0)}°, section 2 ${b2.toFixed(0)}° @ ${p2.toFixed(0)}°. ` +
+    (err > 3 ? `Out of reach by ${err.toFixed(0)} mm. ` : '') +
+    `Biggest servo turn ${maxServo.toFixed(0)}°` + (maxServo > 180 ? ' (over single-turn range: the XIAO will scale the bend down).' : '.');
+  return `S ${b1.toFixed(1)} ${p1.toFixed(1)} ${b2.toFixed(1)} ${p2.toFixed(1)}`;
+}
+function shapeCommand() { return `S ${$('b1').value} ${$('p1').value} ${$('b2').value} ${$('p2').value}`; }
+
+// ---------------- UI
+const units = { tx: 'mm', ty: 'mm', tz: 'mm', b1: '°', p1: '°', b2: '°', p2: '°' };
+for (const id of Object.keys(units)) {
+  const el = $(id), out = $('o' + id), upd = () => out.textContent = `${el.value} ${units[id]}`;
+  upd();
+  el.addEventListener('input', () => {
+    upd();
+    if (id.startsWith('t')) { const c = ikCommand(); if ($('liveIK').checked) sendLatest(c); }
+    else if ($('liveShape').checked) sendLatest(shapeCommand());
+  });
+}
+$('sendIK').addEventListener('click', () => send(ikCommand()));
+$('sendShape').addEventListener('click', () => send(shapeCommand()));
+$('straight').addEventListener('click', () => { ['b1', 'b2'].forEach(id => { $(id).value = 0; $('o' + id).textContent = '0 °'; }); send('S 0 0 0 0'); });
+document.querySelectorAll('[data-cmd]').forEach(b => b.addEventListener('click', () => send(b.dataset.cmd)));
+const sendRaw = () => { const v = $('raw').value.trim(); if (v) { send(v); $('raw').value = ''; } };
+$('sendRaw').addEventListener('click', sendRaw);
+$('raw').addEventListener('keydown', e => { if (e.key === 'Enter') sendRaw(); });
+
+let circleTimer = null;
+$('circle').addEventListener('click', () => {
+  if (circleTimer) { clearInterval(circleTimer); circleTimer = null; $('circle').textContent = 'Circle demo'; return; }
+  let a = 0; $('circle').textContent = 'Stop circle';
+  circleTimer = setInterval(() => {
+    a += 0.06; $('tx').value = Math.round(80 * Math.cos(a)); $('ty').value = Math.round(80 * Math.sin(a)); $('tz').value = 240;
+    ['tx', 'ty', 'tz'].forEach(id => $(id).dispatchEvent(new Event('input')));
+  }, 150);
+});
+
+// ---------------- mobile base: hold-to-drive (keys + on-screen pad)
+const held = new Set();                         // fwd back left right rotL rotR
+const KEYMAP = { w: 'fwd', s: 'back', a: 'left', d: 'right', q: 'rotL', e: 'rotR' };
+let wasDriving = false;
+function driveVector() {
+  const sp = +$('spd').value;
+  const vx = (held.has('fwd') ? 1 : 0) - (held.has('back') ? 1 : 0);
+  const vy = (held.has('left') ? 1 : 0) - (held.has('right') ? 1 : 0);
+  const w = (held.has('rotL') ? 1 : 0) - (held.has('rotR') ? 1 : 0);
+  return [vx * sp, vy * sp, w * sp];
+}
+function updatePadLook() { document.querySelectorAll('[data-drive]').forEach(b => b.classList.toggle('held', held.has(b.dataset.drive))); }
+setInterval(() => {                              // resend while held so the robot's 0.4 s watchdog stays fed
+  const [vx, vy, w] = driveVector(), moving = vx || vy || w;
+  if (moving) { sendLatest(`D ${vx} ${vy} ${w}`); wasDriving = true; }
+  else if (wasDriving) { pending = null; send('D 0 0 0'); wasDriving = false; }
+}, 120);
+document.querySelectorAll('[data-drive]').forEach(b => {
+  const on = e => { e.preventDefault(); held.add(b.dataset.drive); updatePadLook(); };
+  const off = () => { held.delete(b.dataset.drive); updatePadLook(); };
+  b.addEventListener('pointerdown', on); b.addEventListener('pointerup', off);
+  b.addEventListener('pointerleave', off); b.addEventListener('pointercancel', off);
+});
+window.addEventListener('blur', () => { held.clear(); updatePadLook(); });
+$('spd').addEventListener('input', () => $('ospd').textContent = $('spd').value + ' %'); $('ospd').textContent = $('spd').value + ' %';
+$('saveSigns').addEventListener('click', () => send('N ' + [0, 1, 2, 3].map(i => $('rv' + i).checked ? -1 : 1).join(' ')));
+
+// ---------------- calibration
+$('jog').innerHTML = [0, 1, 2, 3, 4, 5].map(k =>
+  `<div class="jogrow"><span>Servo k${k}</span>${[-10, -2, 2, 10].map(d => `<button data-jog="${k} ${d}">${d > 0 ? '+' : ''}${d}°</button>`).join('')}</div>`).join('');
+document.querySelectorAll('[data-jog]').forEach(b => b.addEventListener('click', () => send('J ' + b.dataset.jog)));
+document.querySelectorAll('[data-cfg]').forEach(b => b.addEventListener('click', () => {
+  const v = $(b.dataset.src).value.trim(); if (v) send(`${b.dataset.cfg} ${v}`);
+}));
+
+document.addEventListener('keydown', e => {
+  if ((e.target.tagName === 'INPUT' && e.target.type !== 'range' && e.target.type !== 'checkbox') || e.target.tagName === 'SELECT') return;
+  const k = e.key.toLowerCase();
+  if (KEYMAP[k]) { e.preventDefault(); held.add(KEYMAP[k]); updatePadLook(); return; }
+  if (k === ' ') { e.preventDefault(); held.clear(); $('estop').click(); }
+  else if (k === 'l') send('L');
+  else if (k === 'r') send('R');
+  else if (k === 'p') send('P');
+  else if (e.key.startsWith('Arrow')) {
+    e.preventDefault();
+    const id = (e.key === 'ArrowLeft' || e.key === 'ArrowRight') ? 'tx' : 'ty', d = (e.key === 'ArrowRight' || e.key === 'ArrowUp') ? 5 : -5;
+    $(id).value = +$(id).value + d; $(id).dispatchEvent(new Event('input'));
+  }
+});
+document.addEventListener('keyup', e => { const k = KEYMAP[e.key.toLowerCase()]; if (k) { held.delete(k); updatePadLook(); } });
+setInterval(pump, 120);
+ikCommand();
+log('Open this page in Chrome or Edge, switch the XIAO on, then press Connect to RIGID.');
+
+</script>
+<script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"}}</script>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+// 3D view: commanded shape (blue ghost) vs shape estimated from the servos' real positions (solid)
+const canvas = document.getElementById('view'), wrap = canvas.parentElement;
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(38, 1, 1, 4000);
+camera.position.set(470, -10, 520);
+const orbit = new OrbitControls(camera, canvas); orbit.target.set(0, -120, 0); orbit.enableDamping = true;
+scene.add(new THREE.HemisphereLight(0xffffff, 0x555c66, 1.3));
+const sun = new THREE.DirectionalLight(0xffffff, 1.4); sun.position.set(300, 400, 300); scene.add(sun);
+
+const arm = new THREE.Group(); arm.rotation.x = Math.PI / 2; scene.add(arm);   // base frame: z points down (hanging)
+const grid = new THREE.GridHelper(700, 28, 0x888888, 0x888888); grid.position.y = -330; grid.material.opacity = 0.25; grid.material.transparent = true; scene.add(grid);
+
+// base: plate + lid, simple blocks at the real heights
+const baseMat = new THREE.MeshStandardMaterial({ color: 0xe9e9e4, roughness: 0.7 });
+const plate = new THREE.Mesh(new THREE.BoxGeometry(140, 140, 4), baseMat); plate.position.z = -61.5 + 2; arm.add(plate);
+const lid = new THREE.Mesh(new THREE.CylinderGeometry(52, 52, 4, 6), baseMat); lid.rotation.x = Math.PI / 2; lid.position.z = -10; arm.add(lid);
+const servoMat = new THREE.MeshStandardMaterial({ color: 0x1d1d20, roughness: 0.5 });
+for (let k = 0; k < 6; k++) {
+  const a = (30 + 60 * k) * Math.PI / 180, s = new THREE.Mesh(new THREE.BoxGeometry(35.7, 24.7, 45), servoMat);
+  s.position.set(49 * Math.cos(a), 49 * Math.sin(a), -35); s.rotation.z = a; arm.add(s);
+}
+
+// one hex body per link, sized from the CAD
+function linkGeo(L) {
+  const g = new THREE.CylinderGeometry(L.r + 12, L.r + 12, L.zd - L.zp + 4, 6);
+  g.rotateX(Math.PI / 2); g.rotateZ(Math.PI / 6 + 13.6 * Math.PI / 180); g.translate(0, 0, (L.zp + L.zd) / 2);
+  const ball = new THREE.SphereGeometry(L.rb, 16, 12);
+  return [g, ball];
+}
+const white = new THREE.MeshStandardMaterial({ color: 0xefefea, roughness: 0.6, flatShading: true });
+const black = new THREE.MeshStandardMaterial({ color: 0x26262a, roughness: 0.5, flatShading: true });
+const ghostMat = new THREE.MeshBasicMaterial({ color: 0x3fa7d6, transparent: true, opacity: 0.22, depthWrite: false });
+function makeChain(matFor) {
+  return LINKS.map((L, i) => {
+    const [g, b] = linkGeo(L), grp = new THREE.Group();
+    grp.add(new THREE.Mesh(g, matFor(i)), new THREE.Mesh(b, matFor(i)));
+    grp.matrixAutoUpdate = false; arm.add(grp); return grp;
+  });
+}
+const meas = makeChain(i => (i % 2 === 0 ? black : white));
+const ghost = makeChain(() => ghostMat);
+const tendonMat = new THREE.LineBasicMaterial({ color: 0xff7b2f });
+const tendons = [0, 1, 2, 3, 4, 5].map(() => { const l = new THREE.Line(new THREE.BufferGeometry(), tendonMat); arm.add(l); return l; });
+
+function place(chain, F) {
+  F.forEach((Fj, j) => { const R = Fj.R, p = Fj.p; chain[j].matrix.set(R[0][0], R[0][1], R[0][2], p[0], R[1][0], R[1][1], R[1][2], p[1], R[2][0], R[2][1], R[2][2], p[2], 0, 0, 0, 1); });
+}
+const shapeToQ = s => { const d = Math.PI / 180; return [s[0] * d * Math.cos(s[1] * d), s[0] * d * Math.sin(s[1] * d), s[2] * d * Math.cos(s[3] * d), s[2] * d * Math.sin(s[3] * d)]; };
+
+function resize() { const w = wrap.clientWidth, h = wrap.clientHeight; renderer.setSize(w, h, false); camera.aspect = w / h; camera.updateProjectionMatrix(); }
+new ResizeObserver(resize).observe(wrap); resize();
+
+let qMeas = [0, 0, 0, 0];
+function frame() {
+  const st = window.RIGID || {};
+  const Fc = fk(shapeToQ(st.cmdShape || [0, 0, 0, 0])).F;
+  place(ghost, Fc);
+  if (st.meas) qMeas = shapeFromServos(st.meas, qMeas, 2).q;          // estimate the real shape from servo angles
+  const Fm = fk(qMeas).F;
+  place(meas, Fm);
+  meas.forEach(m => m.visible = !!st.meas);
+  for (let k = 0; k < 6; k++) {
+    const pts = tendonPolyline(st.meas ? Fm : Fc, k).map(p => new THREE.Vector3(p[0], p[1], p[2]));
+    tendons[k].geometry.setFromPoints(pts);
+  }
+  orbit.update(); renderer.render(scene, camera); requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+
+</script>
+</body>
+</html>

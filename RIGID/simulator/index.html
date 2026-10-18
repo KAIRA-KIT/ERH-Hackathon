@@ -1,0 +1,679 @@
+<title>RIGID Arm Simulator</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Semi+Condensed:wght@400;500;600;700&family=Barlow:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: instrument console — 3D bay on the left, control rack + telemetry on the right; stacks on phones */
+:root{
+  --bg:#e9ecef; --panel:#f8f9fa; --raise:#ffffff; --line:#d3d8de; --fg:#16191d; --muted:#5d6670;
+  --accent:#e2621b; --accent-soft:#e2621b22; --good:#2c8a57; --warn:#b9800d; --bad:#c43a2f;
+  --bay:#dfe3e7; --grid:#b9c0c8;
+  --f-display:"Barlow Semi Condensed","Arial Narrow",system-ui,sans-serif;
+  --f-body:"Barlow",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --f-mono:"JetBrains Mono",ui-monospace,"SFMono-Regular",Menlo,monospace;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#101215; --panel:#171a1e; --raise:#1e2227; --line:#2b3138; --fg:#e7eaee; --muted:#8d96a1;
+  --accent:#ff7b2f; --accent-soft:#ff7b2f26; --good:#45b27a; --warn:#e0a72e; --bad:#ec5a4c;
+  --bay:#14171b; --grid:#2c333b; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#101215; --panel:#171a1e; --raise:#1e2227; --line:#2b3138; --fg:#e7eaee; --muted:#8d96a1;
+  --accent:#ff7b2f; --accent-soft:#ff7b2f26; --good:#45b27a; --warn:#e0a72e; --bad:#ec5a4c;
+  --bay:#14171b; --grid:#2c333b; color-scheme:dark}
+html,body{height:100%}
+body{background:var(--bg);color:var(--fg);font-family:var(--f-body);font-size:14px;line-height:1.45;
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:12px}
+*{box-sizing:border-box}
+header.top{display:flex;flex-wrap:wrap;align-items:center;gap:10px 18px;padding-block:4px 12px}
+header.top h1{font-family:var(--f-display);font-weight:700;font-size:26px;letter-spacing:.02em;margin:0;text-wrap:balance}
+header.top h1 span{color:var(--accent)}
+header.top p{margin:0;color:var(--muted);font-size:13px;max-width:60ch}
+.chips{display:flex;flex-wrap:wrap;gap:6px;margin-left:auto}
+.chip{font-family:var(--f-mono);font-size:12px;padding:4px 9px;border-radius:999px;border:1px solid var(--line);background:var(--raise);white-space:nowrap}
+.chip b{font-weight:500}
+.chip.ok{border-color:color-mix(in srgb,var(--good) 55%,var(--line));color:var(--good)}
+.chip.warn{border-color:color-mix(in srgb,var(--warn) 55%,var(--line));color:var(--warn)}
+.chip.bad{border-color:color-mix(in srgb,var(--bad) 60%,var(--line));color:var(--bad)}
+main{display:grid;grid-template-columns:minmax(0,1fr) 400px;gap:14px;align-items:start}
+@media (max-width:960px){main{grid-template-columns:minmax(0,1fr)}}
+.bay{position:relative;background:var(--bay);border:1px solid var(--line);border-radius:10px;overflow:hidden;height:min(78vh,820px);min-height:420px}
+@media (max-width:960px){.bay{height:62vh}}
+#view{display:block;width:100%;height:100%;touch-action:none}
+.bay .legend{position:absolute;left:10px;bottom:10px;display:flex;flex-wrap:wrap;gap:6px 12px;font-size:12px;color:var(--muted);background:color-mix(in srgb,var(--panel) 85%,transparent);padding:6px 10px;border-radius:6px;max-width:calc(100% - 20px)}
+.bay .legend i{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:5px;vertical-align:-1px}
+.bay .hint{position:absolute;right:10px;top:10px;font-size:12px;color:var(--muted);background:color-mix(in srgb,var(--panel) 85%,transparent);padding:5px 9px;border-radius:6px}
+[hidden]{display:none!important}
+#loading{position:absolute;inset:0;display:grid;place-items:center;font-family:var(--f-mono);color:var(--muted)}
+.rack{display:flex;flex-direction:column;gap:12px;min-width:0}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:12px 14px;min-width:0}
+.card h2{font-family:var(--f-display);font-weight:600;font-size:13px;letter-spacing:.09em;text-transform:uppercase;color:var(--muted);margin:0 0 10px}
+.seg{display:grid;grid-auto-flow:column;grid-auto-columns:1fr;border:1px solid var(--line);border-radius:7px;overflow:hidden;background:var(--raise)}
+.seg button{font:500 13px var(--f-body);color:var(--fg);background:transparent;border:0;padding:7px 6px;cursor:pointer}
+.seg button+button{border-left:1px solid var(--line)}
+.seg button[aria-pressed="true"]{background:var(--accent);color:#fff}
+.seg button:focus-visible,button:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.row{display:grid;grid-template-columns:118px minmax(0,1fr) 64px;align-items:center;gap:8px;margin-top:8px}
+.row label{font-size:13px;color:var(--muted)}
+.row output{font-family:var(--f-mono);font-size:12px;text-align:right;font-variant-numeric:tabular-nums}
+input[type=range]{width:100%;accent-color:var(--accent)}
+.stack{display:flex;flex-direction:column;gap:8px}
+.setup{display:grid;grid-template-columns:86px minmax(0,1fr);gap:8px;align-items:center}
+.setup span{font-size:13px;color:var(--muted)}
+.btns{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}
+.btn{font:500 13px var(--f-body);padding:7px 12px;border-radius:7px;border:1px solid var(--line);background:var(--raise);color:var(--fg);cursor:pointer}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+.check{display:flex;align-items:center;gap:8px;font-size:13px;margin-top:8px}
+.note{font-size:12px;color:var(--muted);margin:8px 0 0}
+table.tel{width:100%;border-collapse:collapse;font-family:var(--f-mono);font-size:12px;font-variant-numeric:tabular-nums}
+table.tel th{font:600 11px var(--f-display);letter-spacing:.06em;text-transform:uppercase;color:var(--muted);text-align:right;padding:3px 4px;border-bottom:1px solid var(--line)}
+table.tel th:first-child,table.tel td:first-child{text-align:left}
+table.tel td{text-align:right;padding:4px 4px;border-bottom:1px solid color-mix(in srgb,var(--line) 60%,transparent)}
+td.flag-bad{color:var(--bad)} td.flag-warn{color:var(--warn)}
+.meter{height:10px;border-radius:5px;background:var(--raise);border:1px solid var(--line);overflow:hidden;position:relative}
+.meter>div{height:100%;background:var(--good);transition:width .15s}
+.meter.warn>div{background:var(--warn)} .meter.bad>div{background:var(--bad)}
+.kv{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:4px 10px;font-size:13px;margin-top:8px}
+.kv dt{color:var(--muted)} .kv dd{margin:0;font-family:var(--f-mono);font-size:12.5px;text-align:right;font-variant-numeric:tabular-nums}
+.joints{display:grid;grid-template-columns:repeat(12,minmax(0,1fr));gap:3px;align-items:end;height:74px;margin-top:6px}
+.joints .j{display:flex;flex-direction:column;justify-content:flex-end;height:100%;}
+.joints .j div{background:var(--good);border-radius:2px 2px 0 0;min-height:2px}
+.joints .j.warn div{background:var(--warn)} .joints .j.bad div{background:var(--bad)}
+.jaxis{display:grid;grid-template-columns:repeat(12,minmax(0,1fr));gap:3px;font-family:var(--f-mono);font-size:10px;color:var(--muted);text-align:center;margin-top:3px}
+.big{font-family:var(--f-display);font-weight:600;font-size:22px}
+details{font-size:13px;color:var(--muted)} details summary{cursor:pointer;color:var(--fg);font-weight:500}
+details ul{padding-left:18px;margin:8px 0 0} details li{margin:3px 0}
+@media (prefers-reduced-motion: reduce){.meter>div{transition:none}}
+</style>
+<header class="top">
+  <div>
+    <h1>RIGID <span>Arm Simulator</span></h1>
+    <p>Your CAD geometry, six ST3215-HS servos on a 12 V / 4 A supply, hanging under the car. Drag the orange target to see the arm reach for it, then lock it and load the tip.</p>
+  </div>
+  <div class="chips" aria-live="polite">
+    <span class="chip" id="chipSupply">Supply —</span>
+    <span class="chip" id="chipLock">Lock —</span>
+    <span class="chip" id="chipTravel">Travel —</span>
+    <span class="chip" id="chipReach">Reach —</span>
+  </div>
+</header>
+
+<main>
+  <section class="bay" aria-label="3D view of the arm">
+    <canvas id="view"></canvas>
+    <div id="loading">Loading CAD meshes…</div>
+    <div class="hint">Drag to orbit · scroll to zoom · drag the orange arrows to move the target</div>
+    <div class="legend">
+      <span><i style="background:var(--accent)"></i>Tendons</span>
+      <span><i style="background:#8a94a0"></i>Reachable tip positions</span>
+      <span><i style="background:#3fa7d6"></i>Tip path</span>
+    </div>
+  </section>
+
+  <div class="rack">
+    <div class="card">
+      <h2>Setup</h2>
+      <div class="setup">
+        <span>Mounting</span>
+        <div class="seg" id="segMount"><button data-v="hang" aria-pressed="true">Hanging</button><button data-v="stand" aria-pressed="false">Standing</button></div>
+        <span>Tendons</span>
+        <div class="seg" id="segLayout"><button data-v="two" aria-pressed="true">3 mid + 3 tip</button><button data-v="one" aria-pressed="false">All 6 to tip</button></div>
+        <span>Servo mode</span>
+        <div class="seg" id="segTurns"><button data-v="single" aria-pressed="true">Single-turn</button><button data-v="multi" aria-pressed="false">Multi-turn</button></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Control</h2>
+      <div class="seg" id="segCtl"><button data-v="ik" aria-pressed="true">Reach (IK)</button><button data-v="bend" aria-pressed="false">Bend</button><button data-v="servo" aria-pressed="false">Servos (FK)</button></div>
+
+      <div id="pIK">
+        <div class="row"><label for="tx">Target X</label><input id="tx" type="range" min="-260" max="260" step="1" value="90"><output id="otx"></output></div>
+        <div class="row"><label for="ty">Target Y</label><input id="ty" type="range" min="-260" max="260" step="1" value="40"><output id="oty"></output></div>
+        <div class="row"><label for="tz">Distance from base</label><input id="tz" type="range" min="20" max="290" step="1" value="235"><output id="otz"></output></div>
+        <div class="btns"><button class="btn primary" id="demo">Run reach demo</button><button class="btn" id="home">Straighten</button></div>
+        <p class="note">Target distance is measured along the base axis from the socket on the lid. Tip error shows when the target is outside what the arm can reach.</p>
+      </div>
+
+      <div id="pBend" hidden>
+        <div class="row"><label for="b0">Section 1 bend</label><input id="b0" type="range" min="0" max="250" step="1" value="45"><output id="ob0"></output></div>
+        <div class="row"><label for="p0">Section 1 direction</label><input id="p0" type="range" min="0" max="359" step="1" value="0"><output id="op0"></output></div>
+        <div id="sec2">
+          <div class="row"><label for="b1">Section 2 bend</label><input id="b1" type="range" min="0" max="250" step="1" value="60"><output id="ob1"></output></div>
+          <div class="row"><label for="p1">Section 2 direction</label><input id="p1" type="range" min="0" max="359" step="1" value="180"><output id="op1"></output></div>
+        </div>
+      </div>
+
+      <div id="pServo" hidden>
+        <div id="servoSliders"></div>
+        <p class="note">Positive = winding the tendon in. Pulling against an opposite tendon makes them fight, shown as residual in the table.</p>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Lock and load</h2>
+      <div class="btns" style="margin-top:0"><button class="btn" id="release">Release (2 N)</button><button class="btn primary" id="lock">Lock (55 N)</button></div>
+      <div class="row"><label for="tpre">Tendon pre-tension</label><input id="tpre" type="range" min="0.5" max="80" step="0.5" value="20"><output id="otpre"></output></div>
+      <div class="row"><label for="pay">Payload at tip</label><input id="pay" type="range" min="0" max="500" step="5" value="0"><output id="opay"></output></div>
+      <div class="row"><label for="push">Side push at tip</label><input id="push" type="range" min="0" max="15" step="0.1" value="0"><output id="opush"></output></div>
+      <div class="row"><label for="mu">Joint friction μ</label><input id="mu" type="range" min="0.1" max="0.6" step="0.01" value="0.30"><output id="omu"></output></div>
+      <div class="row"><label for="ilim">Servo current limit</label><input id="ilim" type="range" min="0.3" max="2.4" step="0.05" value="0.6"><output id="oilim"></output></div>
+      <label class="check"><input type="checkbox" id="car"> Car motors driving (adds 1.5 A to the same supply)</label>
+    </div>
+
+    <div class="card">
+      <h2>Servos</h2>
+      <table class="tel" aria-label="Servo telemetry">
+        <thead><tr><th>#</th><th>Angle</th><th>Turns</th><th>Tension</th><th>Torque</th><th>Current</th></tr></thead>
+        <tbody id="servoRows"></tbody>
+      </table>
+      <dl class="kv">
+        <dt>Supply draw (servos<span id="carTag"></span>)</dt><dd id="supplyTxt">—</dd>
+      </dl>
+      <div class="meter" id="supplyMeter" role="meter" aria-label="Supply current" aria-valuemin="0" aria-valuemax="4"><div style="width:0%"></div></div>
+    </div>
+
+    <div class="card">
+      <h2>Joints and lock</h2>
+      <div class="kv" style="margin-top:0">
+        <dt>Side push the tip can take, as set</dt><dd class="big" id="capNow">—</dd>
+        <dt>Same pose, tendons released</dt><dd id="capRel">—</dd>
+        <dt>Same pose, fully locked (55 N)</dt><dd id="capLock">—</dd>
+      </div>
+      <p class="note" style="margin-top:10px">Friction use per ball joint, base (0) to tip (11). Above the dashed line the joint slips.</p>
+      <div style="position:relative"><div class="joints" id="jbars"></div><div style="position:absolute;left:0;right:0;bottom:37px;border-top:1px dashed var(--muted);opacity:.7"></div></div>
+      <div class="jaxis" id="jaxis"></div>
+      <dl class="kv">
+        <dt>Tip position (x, y, distance)</dt><dd id="tipTxt">—</dd>
+        <dt>Lowest joint compression</dt><dd id="compTxt">—</dd>
+        <dt>Arm mass (from your G-code)</dt><dd>125 g</dd>
+      </dl>
+    </div>
+
+    <div class="card">
+      <details>
+        <summary>What the model assumes</summary>
+        <ul>
+          <li>Geometry comes straight from your STLs: link spacing, tendon hole radii (24 mm at the base, down to 7.5 mm), hole exit heights, ball sizes, joint tilt limits and the base from the TendonServoMount script.</li>
+          <li>Each section bends evenly: every joint in a section takes the same angle (constant curvature). Real joints share the bend less evenly, mostly because of friction.</li>
+          <li>Tendons are inextensible and slide through the holes without friction. Real tendons lose some force over 12 links.</li>
+          <li>Statics are quasi-static: gravity on every link (125 g total, split by volume), tip payload and side push. Tensions are the least-effort set that balances the joints. Whatever moment is left over must be carried by ball-socket friction, μ × compression × ball radius.</li>
+          <li>ST3215-HS: 1.96 N·m stall, 2.4 A stall, 8.3 kg·cm/A, 106 rpm, 6 mm drum radius. Speed drops linearly with load.</li>
+          <li>"3 mid + 3 tip" ends tendons 1, 3 and 5 at Link4 (the 6th body). Switch to "All 6 to tip" if that is how you thread them.</li>
+        </ul>
+      </details>
+    </div>
+  </div>
+</main>
+<script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"}}</script>
+<script>
+// ===== RIGID kinematics + statics model (units: mm, N, N·mm, rad) =====
+const DEG = Math.PI / 180;
+const LINKS = [{"n":"Link-1","d":29.26,"r":24.0,"zp":11.38,"zd":24.89,"m":0.02448,"cz":17.96,"rb":5.4,"mt":25.0},{"n":"Link0","d":28.168,"r":22.5,"zp":10.83,"zd":23.98,"m":0.02088,"cz":17.2,"rb":5.4,"mt":26.5},{"n":"Link1","d":27.077,"r":21.0,"zp":10.29,"zd":23.07,"m":0.01763,"cz":16.43,"rb":5.4,"mt":27.5},{"n":"Link2","d":25.985,"r":19.5,"zp":9.74,"zd":22.16,"m":0.01471,"cz":15.66,"rb":5.4,"mt":28.0},{"n":"Link3","d":24.893,"r":18.0,"zp":9.2,"zd":21.25,"m":0.01211,"cz":14.87,"rb":5.4,"mt":28.5},{"n":"Link4","d":23.801,"r":16.5,"zp":8.65,"zd":20.34,"m":0.00982,"cz":14.07,"rb":5.4,"mt":29.5},{"n":"Link5","d":22.709,"r":15.0,"zp":8.1,"zd":19.43,"m":0.0078,"cz":13.25,"rb":5.4,"mt":30.5},{"n":"Link6","d":21.617,"r":13.5,"zp":7.56,"zd":18.52,"m":0.00606,"cz":12.4,"rb":5.4,"mt":31.5},{"n":"Link7","d":21.493,"r":12.0,"zp":7.01,"zd":17.61,"m":0.00465,"cz":11.61,"rb":5.4,"mt":33.0},{"n":"Link8","d":19.389,"r":10.5,"zp":5.66,"zd":15.89,"m":0.00323,"cz":10.43,"rb":3.9,"mt":35.5},{"n":"Link9","d":18.038,"r":9.0,"zp":5.14,"zd":15.02,"m":0.0022,"cz":9.58,"rb":3.9,"mt":36.5},{"n":"EEF","d":15.458,"r":7.5,"zp":4.38,"zd":13.78,"m":0.00143,"cz":8.54,"rb":3.96,"mt":36.0}];
+const NJ = LINKS.length;                       // 12 bodies -> 12 ball joints (joint 0 = lid socket)
+const ALPHA = [0,1,2,3,4,5].map(k => (43.609 + 60 * k) * DEG);  // tendon hole angles in base frame
+const LID = { r: 25.5, z: -8.0 };             // lid tendon-hole exit, relative to socket-cup centre
+const Z_DRUM = -22.41;                         // drum tangent height (shaft) relative to cup centre
+const DRUM_R = 6.0;                            // spool drum radius, mm
+const KT = 0.814;                              // N·m per A  (8.3 kg·cm/A)
+const I_IDLE = 0.10, I_STALL = 2.4, TAU_STALL = 1.96, SUPPLY_A = 4.0, CAR_A = 1.5;
+const OMEGA0 = 106 * 6;                        // deg/s no-load (106 rpm)
+
+const M = {
+  layout: 'two',   // 'two' = 3 tendons to mid + 3 to tip, 'one' = all 6 to tip
+  split: 5,        // last joint/link index of section 1 in 'two' layout
+  mount: 'hang',
+};
+function nSec() { return M.layout === 'two' ? 2 : 1; }
+function secOf(j) { return M.layout === 'two' ? (j <= M.split ? 0 : 1) : 0; }
+function secJoints(s) { const a = []; for (let j = 0; j < NJ; j++) if (secOf(j) === s) a.push(j); return a; }
+function term(k) { return M.layout === 'two' ? (k % 2 === 0 ? M.split : NJ - 1) : NJ - 1; }
+function bMax(s) { const js = secJoints(s); return js.length * Math.min(...js.map(j => LINKS[j].mt)) * DEG * 0.95; }
+
+// --- small linear algebra
+const I3 = [[1,0,0],[0,1,0],[0,0,1]];
+function mul3(A, B) { const C = [[0,0,0],[0,0,0],[0,0,0]]; for (let i=0;i<3;i++) for (let j=0;j<3;j++) C[i][j]=A[i][0]*B[0][j]+A[i][1]*B[1][j]+A[i][2]*B[2][j]; return C; }
+function mv(A, v) { return [A[0][0]*v[0]+A[0][1]*v[1]+A[0][2]*v[2], A[1][0]*v[0]+A[1][1]*v[1]+A[1][2]*v[2], A[2][0]*v[0]+A[2][1]*v[1]+A[2][2]*v[2]]; }
+const add = (a,b) => [a[0]+b[0],a[1]+b[1],a[2]+b[2]];
+const sub = (a,b) => [a[0]-b[0],a[1]-b[1],a[2]-b[2]];
+const scl = (a,s) => [a[0]*s,a[1]*s,a[2]*s];
+const dot = (a,b) => a[0]*b[0]+a[1]*b[1]+a[2]*b[2];
+const crs = (a,b) => [a[1]*b[2]-a[2]*b[1], a[2]*b[0]-a[0]*b[2], a[0]*b[1]-a[1]*b[0]];
+const nrm = a => Math.hypot(a[0],a[1],a[2]);
+function rotvec(wx, wy, wz) {
+  const th = Math.hypot(wx, wy, wz); if (th < 1e-12) return I3;
+  const x=wx/th, y=wy/th, z=wz/th, c=Math.cos(th), s=Math.sin(th), v=1-c;
+  return [[c+x*x*v, x*y*v-z*s, x*z*v+y*s],[y*x*v+z*s, c+y*y*v, y*z*v-x*s],[z*x*v-y*s, z*y*v+x*s, c+z*z*v]];
+}
+function solveLin(A, b) {                      // Gaussian elimination, small dense
+  const n = b.length, M2 = A.map((r,i) => [...r, b[i]]);
+  for (let c = 0; c < n; c++) {
+    let p = c; for (let r = c+1; r < n; r++) if (Math.abs(M2[r][c]) > Math.abs(M2[p][c])) p = r;
+    [M2[c], M2[p]] = [M2[p], M2[c]]; const d = M2[c][c] || 1e-12;
+    for (let r = 0; r < n; r++) if (r !== c) { const f = M2[r][c] / d; for (let k = c; k <= n; k++) M2[r][k] -= f * M2[c][k]; }
+  }
+  return M2.map((r,i) => r[n] / (r[i] || 1e-12));
+}
+
+// --- forward kinematics: q = [bx0, by0, bx1, by1] total bend vector per section (rad)
+function fk(q) {
+  const F = new Array(NJ); let R = I3, p = [0,0,0];
+  const n = [secJoints(0).length, secJoints(1).length];
+  for (let j = 0; j < NJ; j++) {
+    const s = secOf(j), bx = q[2*s] / n[s], by = q[2*s+1] / n[s];
+    R = mul3(R, rotvec(-by, bx, 0));
+    F[j] = { R, p };
+    p = add(p, mv(R, [0, 0, LINKS[j].d]));
+  }
+  return { F, tip: p };
+}
+const W = (Fj, v) => add(Fj.p, mv(Fj.R, v));
+const hole = (j, k, z) => [LINKS[j].r * Math.cos(ALPHA[k]), LINKS[j].r * Math.sin(ALPHA[k]), z];
+const lidHole = k => [LID.r * Math.cos(ALPHA[k]), LID.r * Math.sin(ALPHA[k]), LID.z];
+function tendonLengths(F) {
+  const L = [];
+  for (let k = 0; k < 6; k++) {
+    let prev = lidHole(k), s = 0;
+    for (let j = 0; j <= term(k); j++) { const a = W(F[j], hole(j, k, LINKS[j].zp)); s += nrm(sub(a, prev)); prev = W(F[j], hole(j, k, LINKS[j].zd)); }
+    L.push(s);
+  }
+  return L;
+}
+function tendonPolyline(F, k) {
+  const lh = lidHole(k), pts = [[lh[0], lh[1], Z_DRUM], lh];
+  for (let j = 0; j <= term(k); j++) { pts.push(W(F[j], hole(j, k, LINKS[j].zp))); pts.push(W(F[j], hole(j, k, LINKS[j].zd))); }
+  return pts;
+}
+let L0 = null;
+function resetZero() { L0 = tendonLengths(fk([0,0,0,0]).F); }
+// servo angle (deg) needed for shape q; positive = winding in
+function servoAnglesFor(q) { const L = tendonLengths(fk(q).F); return L.map((l,k) => (L0[k] - l) / DRUM_R / DEG); }
+
+// limit a shape so no servo exceeds its travel; returns scale used
+function fitTravel(q, limDeg) {
+  const ok = s => Math.max(...servoAnglesFor(q.map(v => v*s)).map(Math.abs)) <= limDeg;
+  if (ok(1)) return { q, s: 1 };
+  let lo = 0, hi = 1; for (let i = 0; i < 14; i++) { const m = (lo+hi)/2; if (ok(m)) lo = m; else hi = m; }
+  return { q: q.map(v => v*lo), s: lo };
+}
+function clampBend(q) {
+  const out = q.slice();
+  for (let s = 0; s < nSec(); s++) { const b = Math.hypot(out[2*s], out[2*s+1]), m = bMax(s); if (b > m) { out[2*s] *= m/b; out[2*s+1] *= m/b; } }
+  for (let s = nSec(); s < 2; s++) { out[2*s] = 0; out[2*s+1] = 0; }
+  return out;
+}
+
+// --- inverse kinematics: tip -> shape (damped least squares)
+function ik(target, q0) {
+  let q = clampBend(q0.slice()); const nq = 2 * nSec(), h = 1e-4, lam2 = 30;
+  for (let it = 0; it < 30; it++) {
+    const tip = fk(q).tip, e = sub(target, tip);
+    if (nrm(e) < 0.05) break;
+    const J = [[],[],[]];
+    for (let i = 0; i < nq; i++) { const qq = q.slice(); qq[i] += h; const t2 = fk(qq).tip; for (let r = 0; r < 3; r++) J[r][i] = (t2[r] - tip[r]) / h; }
+    const JJt = [0,1,2].map(r => [0,1,2].map(c => { let s = 0; for (let i = 0; i < nq; i++) s += J[r][i]*J[c][i]; return s + (r===c?lam2:0); }));
+    const y = solveLin(JJt, e);
+    for (let i = 0; i < nq; i++) q[i] += J[0][i]*y[0] + J[1][i]*y[1] + J[2][i]*y[2];
+    q = clampBend(q);
+  }
+  return q;
+}
+
+// --- shape from servo angles (Gauss-Newton on tendon length changes)
+function shapeFromServos(thDeg, q0, iters = 4) {
+  let q = q0.slice(); const nq = 2 * nSec(), h = 1e-5;
+  const target = thDeg.map(t => t * DEG * DRUM_R);       // commanded pull-in per tendon, mm
+  for (let it = 0; it < iters; it++) {
+    const L = tendonLengths(fk(q).F), r = L.map((l,k) => (L0[k] - l) - target[k]);
+    const J = r.map(() => []);
+    for (let i = 0; i < nq; i++) { const qq = q.slice(); qq[i] += h; const L2 = tendonLengths(fk(qq).F); for (let k = 0; k < 6; k++) J[k][i] = ((L0[k]-L2[k]) - (L0[k]-L[k])) / h; }
+    const A = [], b = [];
+    for (let i = 0; i < nq; i++) { A.push([]); let s = 0; for (let k = 0; k < 6; k++) s -= J[k][i]*r[k]; b.push(s); for (let c = 0; c < nq; c++) { let t = 0; for (let k = 0; k < 6; k++) t += J[k][i]*J[k][c]; A[i].push(t + (i===c?1e-2:0)); } }
+    const dq = solveLin(A, b); for (let i = 0; i < nq; i++) q[i] += dq[i];
+    q = clampBend(q);
+  }
+  const L = tendonLengths(fk(q).F);
+  const resid = L.map((l,k) => (L0[k] - l) - target[k]);   // >0: tendon needs more pull than commanded (slack); <0: fighting
+  return { q, resid };
+}
+
+// --- quasi-static tension sharing + friction lock check
+function statics(F, tip, opt) {
+  const g = M.mount === 'hang' ? [0,0,9.81] : [0,0,-9.81];
+  const Ftip = add(scl(g, opt.payload_g / 1000), [opt.push_N, 0, 0]);
+  const coms = LINKS.map((L,i) => W(F[i], [0,0,L.cz]));
+  const rows = [], bvec = [], perJoint = [];
+  for (let j = 0; j < NJ; j++) {
+    const c = F[j].p, e = j === 0 ? [0,0,1] : [F[j-1].R[0][2], F[j-1].R[1][2], F[j-1].R[2][2]];
+    let b = crs(sub(tip, c), Ftip), gs = Ftip.slice();
+    for (let i = j; i < NJ; i++) { const mg = scl(g, LINKS[i].m); b = add(b, crs(sub(coms[i], c), mg)); gs = add(gs, mg); }
+    const cols = [], us = [];
+    for (let k = 0; k < 6; k++) {
+      if (term(k) < j) { cols.push([0,0,0]); us.push([0,0,0]); continue; }
+      const A = W(F[j], hole(j, k, LINKS[j].zp));
+      const B = j === 0 ? lidHole(k) : W(F[j-1], hole(j-1, k, LINKS[j-1].zd));
+      const u = scl(sub(B, A), 1 / nrm(sub(B, A)));
+      cols.push(crs(sub(A, c), u)); us.push(u);
+    }
+    perJoint.push({ c, e, b, gs, cols, us });
+    for (let r = 0; r < 3; r++) { rows.push(cols.map(cv => cv[r])); bvec.push(b[r]); }
+  }
+  // box QP: min |A T + b|^2 + eps |T - Tpre|^2, Tmin <= T <= Tcap  (coordinate descent)
+  const H = [0,1,2,3,4,5].map(i => [0,1,2,3,4,5].map(k => rows.reduce((s,r) => s + r[i]*r[k], 0)));
+  const eps = 0.02 * (H.reduce((s,r,i) => s + r[i], 0) / 6);
+  const f = [0,1,2,3,4,5].map(i => rows.reduce((s,r,n) => s + r[i]*bvec[n], 0) - eps * opt.Tpre);
+  for (let i = 0; i < 6; i++) H[i][i] += eps;
+  const T = new Array(6).fill(Math.min(Math.max(opt.Tpre, opt.Tmin), opt.Tcap));
+  for (let sw = 0; sw < 80; sw++) for (let i = 0; i < 6; i++) {
+    let s = f[i]; for (let k = 0; k < 6; k++) if (k !== i) s += H[i][k] * T[k];
+    T[i] = Math.min(opt.Tcap, Math.max(opt.Tmin, -s / H[i][i]));
+  }
+  // joint results
+  const out = perJoint.map((P, j) => {
+    let Mj = P.b.slice(), Fsum = P.gs.slice();
+    for (let k = 0; k < 6; k++) { Mj = add(Mj, scl(P.cols[k], T[k])); Fsum = add(Fsum, scl(P.us[k], T[k])); }
+    const N = -dot(Fsum, P.e);                      // compression pushing ball into the socket
+    const cap = opt.mu * Math.max(N, 0) * LINKS[j].rb;
+    const Mn = nrm(Mj);
+    return { M: Mn, N, cap, util: N <= 0 ? Infinity : Mn / Math.max(cap, 1e-9), sep: N <= 0 };
+  });
+  return { T, joints: out };
+}
+function holds(st) { return st.joints.every(j => j.util <= 1 && !j.sep); }
+function holdCapacity(F, tip, opt) {             // max side push at tip (N) before any joint slips
+  const ok = f => holds(statics(F, tip, { ...opt, push_N: f }));
+  if (!ok(0)) return 0;
+  let lo = 0, hi = 40; if (ok(hi)) return hi;
+  for (let i = 0; i < 16; i++) { const m = (lo+hi)/2; if (ok(m)) lo = m; else hi = m; }
+  return lo;
+}
+function servoElectrical(T, Ilim) {
+  return T.map(t => { const tau = t * DRUM_R / 1000; return { tau, I: Math.min(I_STALL, I_IDLE + tau / KT), over: I_IDLE + tau / KT > Ilim + 1e-6 }; });
+}
+function tensionCap(Ilim) { return Math.max(0.5, (Ilim - I_IDLE) * KT / (DRUM_R / 1000)); }
+if (typeof module !== 'undefined') module.exports = { M, LINKS, fk, ik, shapeFromServos, servoAnglesFor, fitTravel, statics, holdCapacity, tensionCap, servoElectrical, resetZero, tendonLengths, bMax, nrm, DEG };
+
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { TransformControls } from 'three/addons/controls/TransformControls.js';
+import { Line2 } from 'three/addons/lines/Line2.js';
+import { LineMaterial } from 'three/addons/lines/LineMaterial.js';
+import { LineGeometry } from 'three/addons/lines/LineGeometry.js';
+
+const MESH_INDEX = {"link0": {"v_off": 0, "nv": 9096, "f_off": 109152, "nf": 19067}, "link1": {"v_off": 337956, "nv": 8954, "f_off": 445404, "nf": 18808}, "link2": {"v_off": 671100, "nv": 8845, "f_off": 777240, "nf": 18462}, "link3": {"v_off": 998784, "nv": 8699, "f_off": 1103172, "nf": 18202}, "link4": {"v_off": 1321596, "nv": 8478, "f_off": 1423332, "nf": 17944}, "link5": {"v_off": 1638660, "nv": 8353, "f_off": 1738896, "nf": 17682}, "link6": {"v_off": 1951080, "nv": 8252, "f_off": 2050104, "nf": 17502}, "link7": {"v_off": 2260128, "nv": 8130, "f_off": 2357688, "nf": 17243}, "link8": {"v_off": 2564604, "nv": 8091, "f_off": 2661696, "nf": 17070}, "link9": {"v_off": 2866536, "nv": 7584, "f_off": 2957544, "nf": 16113}, "link10": {"v_off": 3150900, "nv": 7396, "f_off": 3239652, "nf": 15851}, "link11": {"v_off": 3429864, "nv": 6470, "f_off": 3507504, "nf": 14037}, "base_white": {"v_off": 3675948, "nv": 10965, "f_off": 3807528, "nf": 22808}, "servos": {"v_off": 4081224, "nv": 444, "f_off": 4086552, "nf": 840}};
+const $ = id => document.getElementById(id);
+const cssVar = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+
+// ---------------- state
+resetZero();
+const S = {
+  ctl: 'ik', turns: 'single', target: [90, 40, 235],
+  qIK: [0.01, 0.01, 0, 0], q: [0, 0, 0, 0], thAct: [0,0,0,0,0,0], thCmd: [0,0,0,0,0,0],
+  T: [0,0,0,0,0,0], travelScale: 1, demo: false, demoT: 0, trail: [], lastUI: 0, lastCap: 0, servoMan: [0,0,0,0,0,0],
+};
+const lim = () => (S.turns === 'multi' ? 1080 : 180);
+
+// ---------------- three.js scene
+const canvas = $('view'), bay = canvas.parentElement;
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(38, 1, 1, 5000);
+camera.position.set(430, 40, 520);
+const orbit = new OrbitControls(camera, canvas);
+orbit.target.set(0, -120, 0); orbit.enableDamping = true;
+scene.add(new THREE.HemisphereLight(0xffffff, 0x5a6068, 1.25));
+const sun = new THREE.DirectionalLight(0xffffff, 1.7); sun.position.set(320, 520, 420); scene.add(sun);
+const fill = new THREE.DirectionalLight(0xffffff, 0.55); fill.position.set(-400, -100, -300); scene.add(fill);
+
+const arm = new THREE.Group(); scene.add(arm);          // arm group = base frame (mm), z along the arm
+const grid = new THREE.GridHelper(900, 36); scene.add(grid);
+
+const matWhite = new THREE.MeshStandardMaterial({ color: 0xeeeeea, roughness: 0.62, metalness: 0, flatShading: true, side: THREE.DoubleSide });
+const matBlack = new THREE.MeshStandardMaterial({ color: 0x232327, roughness: 0.5, metalness: 0.05, flatShading: true, side: THREE.DoubleSide });
+const matServo = new THREE.MeshStandardMaterial({ color: 0x1b1b1e, roughness: 0.45, metalness: 0.1, flatShading: true, side: THREE.DoubleSide });
+const linkMeshes = [];
+
+const target = new THREE.Mesh(new THREE.SphereGeometry(6, 24, 16), new THREE.MeshStandardMaterial({ color: 0xff7b2f, emissive: 0x7a2c00 }));
+arm.add(target);
+const tipDot = new THREE.Mesh(new THREE.SphereGeometry(3.2, 16, 12), new THREE.MeshStandardMaterial({ color: 0x3fa7d6, emissive: 0x0b3a52 }));
+arm.add(tipDot);
+const tc = new TransformControls(camera, canvas); tc.size = 0.7; tc.attach(target); scene.add(tc);
+tc.addEventListener('dragging-changed', e => { orbit.enabled = !e.value; if (e.value) stopDemo(); });
+tc.addEventListener('objectChange', () => { S.target = [target.position.x, target.position.y, target.position.z]; syncTargetSliders(); });
+
+const tendonMat = new LineMaterial({ color: 0xff7b2f, linewidth: 2.6 });
+const slackMat = new LineMaterial({ color: 0x8a94a0, linewidth: 1.6, dashed: false });
+const tendons = [0,1,2,3,4,5].map(() => { const l = new Line2(new LineGeometry(), tendonMat); arm.add(l); return l; });
+const trailGeo = new THREE.BufferGeometry(); trailGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(600 * 3), 3));
+const trail = new THREE.Line(trailGeo, new THREE.LineBasicMaterial({ color: 0x3fa7d6 })); arm.add(trail);
+let cloud = null;
+
+function applyTheme() {
+  renderer.setClearColor(new THREE.Color(cssVar('--bay') || '#dfe3e7'));
+  const gc = new THREE.Color(cssVar('--grid') || '#b9c0c8');
+  grid.material.color = gc; grid.material.vertexColors = false; grid.material.needsUpdate = true;
+  const ac = new THREE.Color(cssVar('--accent') || '#e2621b'); tendonMat.color = ac; target.material.color = ac;
+}
+applyTheme();
+matchMedia('(prefers-color-scheme: dark)').addEventListener('change', applyTheme);
+new MutationObserver(applyTheme).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+
+function resize() {
+  const w = bay.clientWidth, h = bay.clientHeight;
+  renderer.setSize(w, h, false); camera.aspect = w / h; camera.updateProjectionMatrix();
+  tendonMat.resolution.set(w, h); slackMat.resolution.set(w, h);
+}
+new ResizeObserver(resize).observe(bay); resize();
+
+function applyMount() {
+  M.mount = $('segMount').querySelector('[aria-pressed="true"]').dataset.v;
+  if (M.mount === 'hang') { arm.rotation.x = Math.PI / 2; grid.position.y = -330; orbit.target.set(0, -130, 0); }
+  else { arm.rotation.x = -Math.PI / 2; grid.position.y = -61.5; orbit.target.set(0, 130, 0); }
+}
+
+// ---------------- meshes
+fetch('meshes.txt').then(r => { if (!r.ok) throw new Error(r.status); return r.text(); }).then(txt => {
+  const bin = atob(txt.trim()), u8 = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) u8[i] = bin.charCodeAt(i); const buf = u8.buffer;
+  const geo = name => {
+    const ix = MESH_INDEX[name], g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(buf, ix.v_off, ix.nv * 3), 3));
+    g.setIndex(new THREE.BufferAttribute(new Uint32Array(buf, ix.f_off, ix.nf * 3), 1));
+    g.computeVertexNormals(); return g;
+  };
+  arm.add(new THREE.Mesh(geo('base_white'), matWhite));
+  arm.add(new THREE.Mesh(geo('servos'), matServo));
+  for (let i = 0; i < 12; i++) {
+    const m = new THREE.Mesh(geo('link' + i), i % 2 === 0 ? matBlack : matWhite);
+    m.matrixAutoUpdate = false; arm.add(m); linkMeshes.push(m);
+  }
+  $('loading').hidden = true;
+}).catch(() => { $('loading').textContent = 'Could not load the CAD meshes. The numbers on the right still work.'; });
+
+// ---------------- workspace cloud (tip positions the servos can reach)
+function buildCloud() {
+  if (cloud) { arm.remove(cloud); cloud.geometry.dispose(); }
+  const pts = [], L = lim();
+  const tryQ = q => { const th = servoAnglesFor(q); if (Math.max(...th.map(Math.abs)) <= L) pts.push(...fk(q).tip); };
+  if (M.layout === 'one') {
+    const bm = bMax(0);
+    for (let a = 0; a < 72; a++) for (let r = 1; r <= 26; r++) { const b = bm * r / 26, p = a * 5 * DEG; tryQ([b * Math.cos(p), b * Math.sin(p), 0, 0]); }
+  } else {
+    let seed = 7; const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+    for (let n = 0; n < 2600; n++) {
+      const q = [];
+      for (let s = 0; s < 2; s++) { const b = bMax(s) * Math.sqrt(rnd()), p = rnd() * 2 * Math.PI; q.push(b * Math.cos(p), b * Math.sin(p)); }
+      tryQ(q);
+    }
+  }
+  const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pts, 3));
+  cloud = new THREE.Points(g, new THREE.PointsMaterial({ color: 0x8a94a0, size: 2.4, sizeAttenuation: false, transparent: true, opacity: 0.55 }));
+  arm.add(cloud);
+}
+
+// ---------------- UI wiring
+function seg(id, cb) {
+  const el = $(id);
+  el.addEventListener('click', e => {
+    const b = e.target.closest('button'); if (!b) return;
+    el.querySelectorAll('button').forEach(x => x.setAttribute('aria-pressed', String(x === b)));
+    cb(b.dataset.v);
+  });
+}
+seg('segMount', () => applyMount());
+seg('segLayout', v => {
+  M.layout = v; resetZero(); S.q = [0,0,0,0]; S.qIK = [0.01,0.01,0,0]; S.thAct = [0,0,0,0,0,0];
+  $('sec2').hidden = v !== 'two'; setBendRanges(); buildCloud();
+});
+seg('segTurns', v => { S.turns = v; buildServoSliders(); buildCloud(); });
+seg('segCtl', v => {
+  S.ctl = v; $('pIK').hidden = v !== 'ik'; $('pBend').hidden = v !== 'bend'; $('pServo').hidden = v !== 'servo';
+  target.visible = v === 'ik'; tc.enabled = v === 'ik'; tc.visible = v === 'ik';
+  if (v === 'servo') { S.servoMan = S.thAct.map(t => Math.round(t)); buildServoSliders(); }
+  if (v !== 'ik') stopDemo();
+});
+const fmt = {
+  tx: v => `${v} mm`, ty: v => `${v} mm`, tz: v => `${v} mm`, b0: v => `${v}°`, b1: v => `${v}°`, p0: v => `${v}°`, p1: v => `${v}°`,
+  tpre: v => `${(+v).toFixed(1)} N`, pay: v => `${v} g`, push: v => `${(+v).toFixed(1)} N`, mu: v => (+v).toFixed(2), ilim: v => `${(+v).toFixed(2)} A`,
+};
+for (const id of Object.keys(fmt)) {
+  const el = $(id), out = $('o' + id);
+  const upd = () => { out.textContent = fmt[id](el.value); };
+  el.addEventListener('input', () => { upd(); if (id === 'tx' || id === 'ty' || id === 'tz') { stopDemo(); S.target = [+$('tx').value, +$('ty').value, +$('tz').value]; } });
+  upd();
+}
+function syncTargetSliders() {
+  ['tx','ty','tz'].forEach((id, i) => { $(id).value = Math.round(S.target[i]); $('o' + id).textContent = fmt[id]($(id).value); });
+}
+function setBendRanges() { [0,1].forEach(s => { $('b' + s).max = Math.round(bMax(s) / DEG); }); }
+function buildServoSliders() {
+  const L = lim(), box = $('servoSliders'); box.innerHTML = '';
+  for (let k = 0; k < 6; k++) {
+    const v = Math.max(-L, Math.min(L, S.servoMan[k]));
+    const row = document.createElement('div'); row.className = 'row';
+    row.innerHTML = `<label for="sv${k}">Servo ${k + 1}</label><input id="sv${k}" type="range" min="${-L}" max="${L}" step="1" value="${v}"><output id="osv${k}">${v}°</output>`;
+    box.appendChild(row);
+    row.querySelector('input').addEventListener('input', e => { S.servoMan[k] = +e.target.value; $('osv' + k).textContent = `${e.target.value}°`; });
+  }
+}
+$('demo').addEventListener('click', () => { if (S.demo) stopDemo(); else { S.demo = true; S.demoT = 0; $('demo').textContent = 'Stop demo'; } });
+function stopDemo() { S.demo = false; $('demo').textContent = 'Run reach demo'; }
+$('home').addEventListener('click', () => { stopDemo(); S.target = [0, 0, fk([0,0,0,0]).tip[2]]; syncTargetSliders(); });
+$('release').addEventListener('click', () => { $('tpre').value = 2; $('tpre').dispatchEvent(new Event('input')); });
+$('lock').addEventListener('click', () => { $('tpre').value = 55; $('tpre').dispatchEvent(new Event('input')); });
+$('car').addEventListener('change', () => { $('carTag').textContent = $('car').checked ? ' + car motors' : ''; });
+
+// joint bars
+$('jbars').innerHTML = Array.from({ length: 12 }, () => '<div class="j"><div style="height:0%"></div></div>').join('');
+$('jaxis').innerHTML = Array.from({ length: 12 }, (_, i) => `<span>${i}</span>`).join('');
+$('servoRows').innerHTML = Array.from({ length: 6 }, (_, k) => `<tr id="sr${k}"><td>${k + 1}</td><td></td><td></td><td></td><td></td><td></td></tr>`).join('');
+
+// ---------------- per-frame
+function setMatrix(mesh, Fj) {
+  const R = Fj.R, p = Fj.p;
+  mesh.matrix.set(R[0][0], R[0][1], R[0][2], p[0], R[1][0], R[1][1], R[1][2], p[1], R[2][0], R[2][1], R[2][2], p[2], 0, 0, 0, 1);
+}
+function chip(id, cls, html) { const c = $(id); c.className = 'chip ' + cls; c.innerHTML = html; }
+function opts(Tpre) {
+  const ilim = +$('ilim').value;
+  return { payload_g: +$('pay').value, push_N: +$('push').value, Tpre: Tpre ?? +$('tpre').value, Tmin: 0.5, Tcap: tensionCap(ilim), mu: +$('mu').value };
+}
+
+let last = performance.now();
+function frame(now) {
+  const dt = Math.max(0, Math.min(0.05, (now - last) / 1000)); last = Math.max(last, now);
+  const L = lim();
+
+  if (S.demo) {
+    S.demoT += dt; const a = S.demoT * 0.8;
+    S.target = [120 * Math.cos(a), 120 * Math.sin(a), 215 + 30 * Math.sin(2 * a)];
+    syncTargetSliders();
+  }
+  // commanded servo angles
+  if (S.ctl === 'ik') {
+    S.qIK = ik(S.target, S.qIK);
+    const f = fitTravel(S.qIK, L); S.travelScale = f.s; S.thCmd = servoAnglesFor(f.q);
+  } else if (S.ctl === 'bend') {
+    const q = [0, 1].flatMap(s => { const b = +$('b' + s).value * DEG, p = +$('p' + s).value * DEG; return [b * Math.cos(p), b * Math.sin(p)]; });
+    const f = fitTravel(clampBend(q), L); S.travelScale = f.s; S.thCmd = servoAnglesFor(f.q);
+  } else { S.thCmd = S.servoMan.map(v => Math.max(-L, Math.min(L, v))); S.travelScale = 1; }
+
+  // servos slew at their loaded speed
+  let moving = [];
+  for (let k = 0; k < 6; k++) {
+    const tau = S.T[k] * DRUM_R / 1000, w = OMEGA0 * Math.max(0.15, 1 - tau / TAU_STALL), d = S.thCmd[k] - S.thAct[k], step = w * dt;
+    S.thAct[k] += Math.max(-step, Math.min(step, d)); moving.push(Math.abs(d) > 0.5);
+  }
+  const sh = shapeFromServos(S.thAct, S.q, 3); S.q = sh.q;
+  const K = fk(S.q);
+  const o = opts();
+  const st = statics(K.F, K.tip, o); S.T = st.T;
+
+  // visuals
+  if (linkMeshes.length) K.F.forEach((Fj, j) => setMatrix(linkMeshes[j], Fj));
+  for (let k = 0; k < 6; k++) {
+    const pts = tendonPolyline(K.F, k).flat(); tendons[k].geometry.setPositions(pts);
+    tendons[k].material = S.T[k] < 1.5 ? slackMat : tendonMat; tendons[k].computeLineDistances();
+  }
+  tipDot.position.set(...K.tip);
+  if (!tc.dragging) target.position.set(...S.target);
+  S.trail.push(K.tip); if (S.trail.length > 600) S.trail.shift();
+  const tp = trailGeo.attributes.position; S.trail.forEach((p, i) => tp.setXYZ(i, p[0], p[1], p[2])); tp.needsUpdate = true; trailGeo.setDrawRange(0, S.trail.length);
+
+  // telemetry
+  const elec = servoElectrical(S.T, +$('ilim').value);
+  const iServ = elec.reduce((s, e, k) => s + e.I + (moving[k] ? 0.14 : 0), 0);
+  const iTot = iServ + ($('car').checked ? CAR_A : 0);
+  if (now - S.lastUI > 90) {
+    S.lastUI = now;
+    for (let k = 0; k < 6; k++) {
+      const c = $('sr' + k).children, th = S.thAct[k], atLim = Math.abs(S.thCmd[k]) >= L - 0.5;
+      c[1].textContent = `${th.toFixed(0)}°`; c[1].className = atLim ? 'flag-warn' : '';
+      c[2].textContent = (th / 360).toFixed(2);
+      c[3].textContent = `${S.T[k].toFixed(1)} N`; c[3].className = S.T[k] >= o.Tcap - 0.05 ? 'flag-bad' : '';
+      c[4].textContent = `${(elec[k].tau / 0.0981).toFixed(1)} kg·cm`;
+      c[5].textContent = `${elec[k].I.toFixed(2)} A`;
+    }
+    $('supplyTxt').textContent = `${iTot.toFixed(2)} A of ${SUPPLY_A.toFixed(1)} A`;
+    const sm = $('supplyMeter'); sm.firstElementChild.style.width = `${Math.min(100, iTot / SUPPLY_A * 100)}%`;
+    sm.className = 'meter' + (iTot > SUPPLY_A ? ' bad' : iTot > 0.8 * SUPPLY_A ? ' warn' : ''); sm.setAttribute('aria-valuenow', iTot.toFixed(2));
+    chip('chipSupply', iTot > SUPPLY_A ? 'bad' : iTot > 0.8 * SUPPLY_A ? 'warn' : 'ok', `Supply <b>${iTot.toFixed(2)} / 4.0 A</b>`);
+
+    const bars = $('jbars').children; let worst = 0, worstJ = 0, sepJ = -1;
+    st.joints.forEach((j, i) => {
+      const u = j.sep ? 2 : Math.min(2, j.util); if (u > worst) { worst = u; worstJ = i; } if (j.sep && sepJ < 0) sepJ = i;
+      bars[i].className = 'j' + (u > 1 ? ' bad' : u > 0.7 ? ' warn' : ''); bars[i].firstElementChild.style.height = `${u / 2 * 100}%`;
+      bars[i].title = j.sep ? `Joint ${i}: pulled apart` : `Joint ${i}: ${(j.util * 100).toFixed(0)}% of friction, ${j.N.toFixed(0)} N compression`;
+    });
+    if (sepJ >= 0) chip('chipLock', 'bad', `Joint ${sepJ} <b>pulls apart</b>`);
+    else if (worst > 1) chip('chipLock', 'bad', `Joint ${worstJ} <b>slips</b>`);
+    else chip('chipLock', worst > 0.7 ? 'warn' : 'ok', `Lock <b>holds</b> · ${(worst * 100).toFixed(0)}% used`);
+    const minN = Math.min(...st.joints.map(j => j.N));
+    $('compTxt').textContent = `${minN.toFixed(1)} N`;
+    $('tipTxt').textContent = K.tip.map(v => v.toFixed(0)).join(', ') + ' mm';
+
+    const travelLimited = S.travelScale < 0.999 || S.thCmd.some(t => Math.abs(t) >= L - 0.5);
+    chip('chipTravel', travelLimited ? 'warn' : 'ok', travelLimited ? `Travel <b>limited</b>${S.turns === 'single' ? ' · try multi-turn' : ''}` : `Travel <b>ok</b> · max ${Math.max(...S.thAct.map(Math.abs)).toFixed(0)}°`);
+    if (S.ctl === 'ik') {
+      const err = nrm(sub(K.tip, S.target));
+      chip('chipReach', err < 3 ? 'ok' : err < 20 ? 'warn' : 'bad', err < 3 ? 'Tip <b>on target</b>' : `Tip <b>${err.toFixed(0)} mm</b> off target`);
+    } else chip('chipReach', '', `Tip at <b>${K.tip.map(v => v.toFixed(0)).join(', ')}</b>`);
+  }
+  if (now - S.lastCap > 350) {
+    S.lastCap = now;
+    const g = n => `${n.toFixed(2)} N · ${(n / 9.81 * 1000).toFixed(0)} g`;
+    $('capNow').textContent = g(holdCapacity(K.F, K.tip, o));
+    $('capRel').textContent = g(holdCapacity(K.F, K.tip, opts(2)));
+    $('capLock').textContent = g(holdCapacity(K.F, K.tip, opts(55)));
+  }
+
+  orbit.update();
+  renderer.render(scene, camera);
+  requestAnimationFrame(frame);
+}
+
+applyMount(); setBendRanges(); buildServoSliders(); buildCloud(); syncTargetSliders();
+requestAnimationFrame(frame);
+
+</script>
